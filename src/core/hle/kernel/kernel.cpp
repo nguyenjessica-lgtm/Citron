@@ -47,6 +47,14 @@
 
 namespace Kernel {
 
+static thread_local struct {
+    std::optional<KThread> raw_thread;
+    KThread *thread = nullptr;
+    u8 host_thread_id = UINT8_MAX;
+    bool is_phantom_mode_for_singlecore{false};
+    KThread* current_thread{nullptr};
+} tls_data;
+
 struct KernelCore::Impl {
     static constexpr size_t ApplicationMemoryBlockSlabHeapSize = 20000;
     static constexpr size_t SystemMemoryBlockSlabHeapSize = 10000;
@@ -353,14 +361,6 @@ struct KernelCore::Impl {
         application_process = process;
         application_process->Open();
     }
-
-    static thread_local struct {
-        std::optional<KThread> raw_thread;
-        KThread *thread = nullptr;
-        u8 host_thread_id = UINT8_MAX;
-        bool is_phantom_mode_for_singlecore{false};
-        KThread* current_thread{nullptr};
-    } tls_data;
 
     /// Sets the host thread ID for the caller.
     u32 SetHostThreadId(std::size_t core_id) {
