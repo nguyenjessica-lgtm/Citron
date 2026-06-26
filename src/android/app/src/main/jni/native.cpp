@@ -233,6 +233,10 @@ void EmulationSession::InitializeSystem(bool reload) {
         m_input_subsystem.Initialize();
     }
 
+    Core::Crypto::KeyManager::Instance().ReloadKeys();
+    LOG_INFO(Frontend, "InitializeSystem: keys_loaded_before_content={}",
+             Core::Crypto::KeyManager::Instance().AreKeysLoaded());
+
     // Initialize filesystem.
     m_system.SetFilesystem(m_vfs);
     m_system.GetUserChannel().clear();
@@ -577,8 +581,23 @@ jobjectArray Java_org_citron_citron_1emu_utils_GpuDriverHelper_getSystemDriverIn
 }
 
 jboolean Java_org_citron_citron_1emu_NativeLibrary_reloadKeys(JNIEnv* env, jclass clazz) {
+    auto& session = EmulationSession::GetInstance();
     Core::Crypto::KeyManager::Instance().ReloadKeys();
-    return static_cast<jboolean>(Core::Crypto::KeyManager::Instance().AreKeysLoaded());
+    const bool keys_loaded = Core::Crypto::KeyManager::Instance().AreKeysLoaded();
+
+    bool refreshed_content = false;
+    if (keys_loaded && !session.IsRunning()) {
+        auto& system = session.System();
+        if (auto filesystem = system.GetFilesystem(); filesystem != nullptr) {
+            system.GetFileSystemController().InitializeContentSystem(*filesystem);
+            refreshed_content = true;
+        }
+    }
+
+    LOG_INFO(Frontend, "reloadKeys: keys_loaded={}, refreshed_content={}", keys_loaded,
+             refreshed_content);
+
+    return static_cast<jboolean>(keys_loaded);
 }
 
 void Java_org_citron_citron_1emu_NativeLibrary_unpauseEmulation(JNIEnv* env, jclass clazz) {
@@ -912,8 +931,13 @@ jboolean Java_org_citron_citron_1emu_NativeLibrary_areKeysPresent(JNIEnv* env, j
     }
 
     auto& system = session.System();
-    system.GetFileSystemController().InitializeContentSystem(*system.GetFilesystem());
     Core::Crypto::KeyManager::Instance().ReloadKeys();
+    bool refreshed_content = false;
+    if (auto filesystem = system.GetFilesystem(); filesystem != nullptr) {
+        system.GetFileSystemController().InitializeContentSystem(*filesystem);
+        refreshed_content = true;
+    }
+    LOG_INFO(Frontend, "areKeysPresent: refreshed_content={}", refreshed_content);
     return ContentManager::AreKeysPresent();
 }
 
