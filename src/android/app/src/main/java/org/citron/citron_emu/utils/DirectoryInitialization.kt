@@ -24,8 +24,8 @@ object DirectoryInitialization {
         if (!areDirectoriesReady) {
             initializeInternalStorage()
             NativeConfig.initializeGlobalConfig()
-            NativeLibrary.initializeSystem(false)
             migrateSettings()
+            NativeLibrary.initializeSystem(false)
             areDirectoriesReady = true
         }
     }

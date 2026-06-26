@@ -811,10 +811,20 @@ InitStage FileSystemController::GetInitStage() const {
     return init_stage;
 }
 
+void FileSystemController::InitializeContentSystem(FileSys::VfsFilesystem& vfs, bool overwrite) {
+    if (init_stage < InitStage::FS_READY) {
+        LOG_ERROR(Service_FS, "InitializeContentSystem called too early: init_stage={}",
+                  static_cast<u8>(init_stage));
+        return;
+    }
+
+    CreateFactories(vfs, overwrite);
+}
+
 void FileSystemController::CreateFactories(FileSys::VfsFilesystem& vfs, bool overwrite) {
     if (init_stage < InitStage::FS_READY) {
-        LOG_WARNING(Service_FS, "CreateFactories skipped: init_stage={}",
-                    static_cast<u8>(init_stage));
+        LOG_ERROR(Service_FS, "CreateFactories called too early: init_stage={}",
+                  static_cast<u8>(init_stage));
         return;
     }
 

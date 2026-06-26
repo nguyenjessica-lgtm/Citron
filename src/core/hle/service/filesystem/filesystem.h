@@ -137,9 +137,9 @@ public:
 
     void RefreshExternalContentProvider();
 
-    // Creates the SaveData, SDMC, and BIS Factories. Should be called once and before any function
-    // above is called.
-    void CreateFactories(FileSys::VfsFilesystem& vfs, bool overwrite = true);
+    // Single public entry for creating the SaveData, SDMC, BIS, and content providers.
+    // Should be called once and before any function above is called.
+    void InitializeContentSystem(FileSys::VfsFilesystem& vfs, bool overwrite = true);
     void SetInitStage(InitStage stage);
     InitStage GetInitStage() const;
 
@@ -152,6 +152,7 @@ public:
 
 private:
     std::shared_ptr<FileSys::SaveDataFactory> CreateSaveDataFactory(ProgramId program_id);
+    void CreateFactories(FileSys::VfsFilesystem& vfs, bool overwrite);
 
     struct Registration {
         ProgramId program_id;

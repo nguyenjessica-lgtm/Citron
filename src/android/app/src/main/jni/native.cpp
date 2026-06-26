@@ -241,7 +241,7 @@ void EmulationSession::InitializeSystem(bool reload) {
     m_system.RegisterContentProvider(FileSys::ContentProviderUnionSlot::FrontendManual,
                                      m_manual_provider.get());
     fs_controller.SetInitStage(Service::FileSystem::InitStage::FS_READY);
-    fs_controller.CreateFactories(*m_vfs);
+    fs_controller.InitializeContentSystem(*m_vfs);
 }
 
 void EmulationSession::SetAppletId(int applet_id) {
@@ -912,7 +912,7 @@ jboolean Java_org_citron_citron_1emu_NativeLibrary_areKeysPresent(JNIEnv* env, j
     }
 
     auto& system = session.System();
-    system.GetFileSystemController().CreateFactories(*system.GetFilesystem());
+    system.GetFileSystemController().InitializeContentSystem(*system.GetFilesystem());
     Core::Crypto::KeyManager::Instance().ReloadKeys();
     return ContentManager::AreKeysPresent();
 }
