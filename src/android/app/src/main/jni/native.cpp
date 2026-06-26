@@ -216,6 +216,12 @@ void EmulationSession::InitializeSystem(bool reload) {
         return;
     }
 
+    auto& fs_controller = m_system.GetFileSystemController();
+    if (fs_controller.GetInitStage() < Service::FileSystem::InitStage::SETTINGS_READY) {
+        LOG_ERROR(Frontend, "Refusing to initialize system before settings are ready");
+        return;
+    }
+
     if (!reload) {
         m_system.Initialize();
 
@@ -234,7 +240,8 @@ void EmulationSession::InitializeSystem(bool reload) {
     m_system.SetContentProvider(std::make_unique<FileSys::ContentProviderUnion>());
     m_system.RegisterContentProvider(FileSys::ContentProviderUnionSlot::FrontendManual,
                                      m_manual_provider.get());
-    m_system.GetFileSystemController().CreateFactories(*m_vfs);
+    fs_controller.SetInitStage(Service::FileSystem::InitStage::FS_READY);
+    fs_controller.CreateFactories(*m_vfs);
 }
 
 void EmulationSession::SetAppletId(int applet_id) {

@@ -803,7 +803,21 @@ FileSys::VirtualDir FileSystemController::GetBCATDirectory(u64 title_id) const {
     return bis_factory->GetBCATDirectory(title_id);
 }
 
+void FileSystemController::SetInitStage(InitStage stage) {
+    init_stage = stage;
+}
+
+InitStage FileSystemController::GetInitStage() const {
+    return init_stage;
+}
+
 void FileSystemController::CreateFactories(FileSys::VfsFilesystem& vfs, bool overwrite) {
+    if (init_stage < InitStage::FS_READY) {
+        LOG_WARNING(Service_FS, "CreateFactories skipped: init_stage={}",
+                    static_cast<u8>(init_stage));
+        return;
+    }
+
     if (overwrite) {
         system.ClearContentProvider(FileSys::ContentProviderUnionSlot::SysNAND);
         system.ClearContentProvider(FileSys::ContentProviderUnionSlot::UserNAND);
@@ -890,6 +904,8 @@ void FileSystemController::CreateFactories(FileSys::VfsFilesystem& vfs, bool ove
     if (global_save_data_factory == nullptr || overwrite) {
         global_save_data_factory = CreateSaveDataFactory(ProgramId{});
     }
+
+    init_stage = InitStage::CONTENT_READY;
 }
 
 void FileSystemController::RefreshExternalContentProvider() {
