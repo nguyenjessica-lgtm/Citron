@@ -25,6 +25,7 @@ object DirectoryInitialization {
             initializeInternalStorage()
             NativeLibrary.initializeSystem(false)
             NativeConfig.initializeGlobalConfig()
+            NativeLibrary.initializeSystem(true)
             migrateSettings()
             areDirectoriesReady = true
         }

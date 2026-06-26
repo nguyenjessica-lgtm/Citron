@@ -814,16 +814,26 @@ void FileSystemController::CreateFactories(FileSys::VfsFilesystem& vfs, bool ove
     const auto sdmc_dir_path = Common::FS::GetCitronPath(CitronPath::SDMCDir);
     const auto sdmc_load_dir_path = sdmc_dir_path / "atmosphere/contents";
     const auto rw_mode = FileSys::OpenMode::ReadWrite;
+    const auto nand_dir_path = Common::FS::GetCitronPathString(CitronPath::NANDDir);
+    const auto load_dir_path = Common::FS::GetCitronPathString(CitronPath::LoadDir);
+    const auto dump_dir_path = Common::FS::GetCitronPathString(CitronPath::DumpDir);
 
-    auto nand_directory =
-        vfs.OpenDirectory(Common::FS::GetCitronPathString(CitronPath::NANDDir), rw_mode);
+    LOG_INFO(Service_FS, "CreateFactories: overwrite={}, NANDDir={}, SDMCDir={}, LoadDir={}",
+             overwrite, nand_dir_path, Common::FS::PathToUTF8String(sdmc_dir_path), load_dir_path);
+
+    auto nand_directory = vfs.OpenDirectory(nand_dir_path, rw_mode);
     auto sd_directory = vfs.OpenDirectory(Common::FS::PathToUTF8String(sdmc_dir_path), rw_mode);
-    auto load_directory = vfs.OpenDirectory(Common::FS::GetCitronPathString(CitronPath::LoadDir),
-                                            FileSys::OpenMode::Read);
+    auto load_directory = vfs.OpenDirectory(load_dir_path, FileSys::OpenMode::Read);
     auto sd_load_directory = vfs.OpenDirectory(Common::FS::PathToUTF8String(sdmc_load_dir_path),
                                                FileSys::OpenMode::Read);
-    auto dump_directory =
-        vfs.OpenDirectory(Common::FS::GetCitronPathString(CitronPath::DumpDir), rw_mode);
+    auto dump_directory = vfs.OpenDirectory(dump_dir_path, rw_mode);
+
+    LOG_INFO(Service_FS,
+             "CreateFactories: opened NAND={}, SDMC={}, Load={}, Dump={}",
+             nand_directory ? nand_directory->GetFullPath() : "<null>",
+             sd_directory ? sd_directory->GetFullPath() : "<null>",
+             load_directory ? load_directory->GetFullPath() : "<null>",
+             dump_directory ? dump_directory->GetFullPath() : "<null>");
 
     if (bis_factory == nullptr) {
         bis_factory = std::make_unique<FileSys::BISFactory>(
@@ -832,6 +842,13 @@ void FileSystemController::CreateFactories(FileSys::VfsFilesystem& vfs, bool ove
                                        bis_factory->GetSystemNANDContents());
         system.RegisterContentProvider(FileSys::ContentProviderUnionSlot::UserNAND,
                                        bis_factory->GetUserNANDContents());
+
+        const auto* sysnand = bis_factory->GetSystemNANDContents();
+        const auto* usernand = bis_factory->GetUserNANDContents();
+        LOG_INFO(Service_FS,
+                 "CreateFactories: registered NAND providers, sys_entries={}, user_entries={}",
+                 sysnand ? sysnand->ListEntriesFilter().size() : 0,
+                 usernand ? usernand->ListEntriesFilter().size() : 0);
     }
 
     if (sdmc_factory == nullptr) {

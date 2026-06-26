@@ -470,9 +470,17 @@ void RegisteredCache::Refresh() {
         return;
     }
 
+    meta.clear();
+    meta_id.clear();
+    citron_meta.clear();
+
     const auto ids = AccumulateFiles();
     ProcessFiles(ids);
     AccumulateCitronMeta();
+
+    LOG_INFO(Service_FS,
+             "RegisteredCache refreshed: path={}, nca_ids={}, meta_entries={}, citron_meta={}",
+             dir->GetFullPath(), ids.size(), meta.size(), citron_meta.size());
 }
 
 RegisteredCache::RegisteredCache(VirtualDir dir_, ContentProviderParsingFunction parsing_function)
