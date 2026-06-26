@@ -273,6 +273,19 @@ bool EmulationSession::RefreshContentIfIdle(bool keys_loaded)
     return true;
 }
 
+void EmulationSession::SetFilesystemInitStage(Service::FileSystem::InitStage stage) {
+    std::scoped_lock lock(m_mutex);
+    m_system.GetFileSystemController().SetInitStage(stage);
+}
+
+void EmulationSession::PromoteFilesystemInitStage(Service::FileSystem::InitStage stage) {
+    std::scoped_lock lock(m_mutex);
+    auto& controller = m_system.GetFileSystemController();
+    if (controller.GetInitStage() < stage) {
+        controller.SetInitStage(stage);
+    }
+}
+
 void EmulationSession::SetAppletId(int applet_id) {
     m_applet_id = applet_id;
     m_system.GetFrontendAppletHolder().SetCurrentAppletId(

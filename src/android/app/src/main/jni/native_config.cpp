@@ -21,14 +21,11 @@ std::unique_ptr<AndroidConfig> per_game_config;
 namespace {
 
 void SetFilesystemInitStage(Service::FileSystem::InitStage stage) {
-    EmulationSession::GetInstance().System().GetFileSystemController().SetInitStage(stage);
+    EmulationSession::GetInstance().SetFilesystemInitStage(stage);
 }
 
 void PromoteFilesystemInitStage(Service::FileSystem::InitStage stage) {
-    auto& controller = EmulationSession::GetInstance().System().GetFileSystemController();
-    if (controller.GetInitStage() < stage) {
-        controller.SetInitStage(stage);
-    }
+    EmulationSession::GetInstance().PromoteFilesystemInitStage(stage);
 }
 
 } // namespace

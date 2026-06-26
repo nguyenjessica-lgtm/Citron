@@ -426,7 +426,8 @@ std::vector<NcaID> RegisteredCache::AccumulateFiles() const {
     return ids;
 }
 
-void RegisteredCache::ProcessFiles(const std::vector<NcaID>& ids) {
+void RegisteredCache::ProcessFiles(const std::vector<NcaID>& ids, std::map<u64, CNMT>& out_meta,
+                                   std::map<u64, NcaID>& out_meta_id) const {
     for (const auto& id : ids) {
         const auto file = GetFileAtID(id);
 
@@ -444,14 +445,14 @@ void RegisteredCache::ProcessFiles(const std::vector<NcaID>& ids) {
             if (section0_file->GetExtension() != "cnmt")
                 continue;
 
-            meta.insert_or_assign(nca->GetTitleId(), CNMT(section0_file));
-            meta_id.insert_or_assign(nca->GetTitleId(), id);
+            out_meta.insert_or_assign(nca->GetTitleId(), CNMT(section0_file));
+            out_meta_id.insert_or_assign(nca->GetTitleId(), id);
             break;
         }
     }
 }
 
-void RegisteredCache::AccumulateCitronMeta() {
+void RegisteredCache::AccumulateCitronMeta(std::map<u64, CNMT>& out_citron_meta) const {
     const auto meta_dir = dir->GetSubdirectory("citron_meta");
     if (meta_dir == nullptr) {
         return;
@@ -463,7 +464,7 @@ void RegisteredCache::AccumulateCitronMeta() {
         }
 
         CNMT cnmt(file);
-        citron_meta.insert_or_assign(cnmt.GetTitleID(), std::move(cnmt));
+        out_citron_meta.insert_or_assign(cnmt.GetTitleID(), std::move(cnmt));
     }
 }
 
@@ -472,13 +473,17 @@ void RegisteredCache::Refresh() {
         return;
     }
 
-    meta.clear();
-    meta_id.clear();
-    citron_meta.clear();
-
     const auto ids = AccumulateFiles();
-    ProcessFiles(ids);
-    AccumulateCitronMeta();
+    std::map<u64, CNMT> new_meta;
+    std::map<u64, NcaID> new_meta_id;
+    std::map<u64, CNMT> new_citron_meta;
+
+    ProcessFiles(ids, new_meta, new_meta_id);
+    AccumulateCitronMeta(new_citron_meta);
+
+    meta.swap(new_meta);
+    meta_id.swap(new_meta_id);
+    citron_meta.swap(new_citron_meta);
 
     LOG_INFO(Service_FS,
              "RegisteredCache refreshed: path={}, nca_ids={}, meta_entries={}, citron_meta={}",
