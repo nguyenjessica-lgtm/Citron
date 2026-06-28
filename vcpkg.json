@@ -37,7 +37,7 @@
     "openal-soft",
     {
       "name": "openssl",
-      "platform": "!linux & !osx & !android"
+      "platform": "!linux & !osx"
     },
     {
       "name": "opus",
@@ -56,7 +56,7 @@
       "dependencies": [
         {
           "name": "openssl",
-          "platform": "!linux & !osx & !android"
+          "platform": "!linux & !osx"
         }
       ]
     },

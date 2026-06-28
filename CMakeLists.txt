@@ -109,7 +109,7 @@ CMAKE_DEPENDENT_OPTION(CITRON_USE_FASTER_LD "Check if a faster linker is availab
 CMAKE_DEPENDENT_OPTION(USE_SYSTEM_MOLTENVK "Use the system MoltenVK lib (instead of the bundled one)" OFF "APPLE" OFF)
 
 set(DEFAULT_ENABLE_OPENSSL ON)
-if (ANDROID OR WIN32 OR APPLE)
+if (WIN32 OR APPLE)
     set(DEFAULT_ENABLE_OPENSSL OFF)
 endif()
 option(ENABLE_OPENSSL "Enable OpenSSL backend for ISslConnection" ${DEFAULT_ENABLE_OPENSSL})
