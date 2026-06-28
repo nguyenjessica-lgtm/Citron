@@ -267,10 +267,16 @@ void EmulationSession::RefreshContentSystem() {
 
 bool EmulationSession::RefreshContentIfIdle(bool keys_loaded)
 {
-    if (!keys_loaded || m_is_running)
+    if (!keys_loaded) {
         return false;
+    }
 
-    RefreshContentSystem();
+    std::scoped_lock lock(m_mutex);
+    if (m_is_running || m_load_result == Core::SystemResultStatus::Success) {
+        return false;
+    }
+
+    RefreshContentSystemUnlocked();
     return true;
 }
 

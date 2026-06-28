@@ -58,6 +58,22 @@ static std::vector<u64> AccumulateAOCTitleIDs(Core::System& system) {
     return add_on_content;
 }
 
+static std::vector<u64> GetAOCTitleIDsForBase(const std::vector<u64>& add_on_content, u64 base) {
+    std::vector<u64> out;
+    for (const auto title_id : add_on_content) {
+        if (CheckAOCTitleIDMatchesBase(title_id, base)) {
+            out.push_back(title_id);
+        }
+    }
+
+    std::sort(out.begin(), out.end());
+    return out;
+}
+
+static u32 GetGuestAOCIndex(std::size_t ordinal) {
+    return static_cast<u32>(ordinal + 1);
+}
+
 IAddOnContentManager::IAddOnContentManager(Core::System& system_)
     : ServiceFramework{system_, "aoc:u"}, add_on_content{AccumulateAOCTitleIDs(system)},
       service_context{system_, "aoc:u"} {
@@ -108,9 +124,7 @@ Result IAddOnContentManager::CountAddOnContent(Out<u32> out_count, ClientProcess
         R_SUCCEED();
     }
 
-    *out_count = static_cast<u32>(
-        std::count_if(add_on_content.begin(), add_on_content.end(),
-                      [current](u64 tid) { return CheckAOCTitleIDMatchesBase(tid, current); }));
+    *out_count = static_cast<u32>(GetAOCTitleIDsForBase(add_on_content, current).size());
     LOG_WARNING(Service_AOC,
                 "CountAddOnContent: program_id={:016X}, count={}",
                 current, *out_count);
@@ -126,20 +140,16 @@ Result IAddOnContentManager::ListAddOnContent(Out<u32> out_count,
     const auto current = FileSys::GetBaseTitleID(system.GetApplicationProcessProgramID());
 
     std::vector<u32> out;
+    const auto matching_aocs = GetAOCTitleIDsForBase(add_on_content, current);
     const auto& disabled = Settings::values.disabled_addons[current];
     if (std::find(disabled.begin(), disabled.end(), "DLC") == disabled.end()) {
         LOG_WARNING(Service_AOC, "Filtering AOCs for base title ID: {:016X}", current);
-        for (u64 content_id : add_on_content) {
-            const auto aoc_base = FileSys::GetBaseTitleID(content_id);
-            if (aoc_base != current) {
-                // LOG_WARNING(Service_AOC, "Skipping AOC {:016X} (Base: {:016X})", content_id,
-                // aoc_base);
-                continue;
-            }
-
-            LOG_WARNING(Service_AOC, "Match! AOC {:016X} belongs to current app. Adding to list.",
-                        content_id);
-            out.push_back(static_cast<u32>(FileSys::GetAOCID(content_id)));
+        for (std::size_t i = 0; i < matching_aocs.size(); ++i) {
+            const auto guest_index = GetGuestAOCIndex(i);
+            LOG_WARNING(Service_AOC,
+                        "Match! AOC {:016X} belongs to current app. Adding guest_index={}.",
+                        matching_aocs[i], guest_index);
+            out.push_back(guest_index);
         }
     } else {
         LOG_WARNING(Service_AOC, "DLCs are disabled for this title {:016X}", current);
@@ -158,12 +168,11 @@ Result IAddOnContentManager::ListAddOnContent(Out<u32> out_count,
 
     for (u32 i = 0; i < *out_count; ++i) {
         const auto addon_index = out[offset + i];
-        const auto reconstructed_title_id =
-            FileSys::GetAOCBaseTitleID(current) + addon_index;
+        const auto physical_title_id = matching_aocs[addon_index - 1];
 
         LOG_WARNING(Service_AOC,
-                    "ListAddOnContent output[{}]: addon_index={}, title_id={:016X}",
-                    i, addon_index, reconstructed_title_id);
+                    "ListAddOnContent output[{}]: addon_index={}, physical_title_id={:016X}",
+                    i, addon_index, physical_title_id);
     }
 
     std::rotate(out.begin(), out.begin() + offset, out.end());
@@ -185,9 +194,7 @@ Result IAddOnContentManager::CountAddOnContentByApplicationId(Out<u32> out_count
         R_SUCCEED();
     }
 
-    *out_count = static_cast<u32>(
-        std::count_if(add_on_content.begin(), add_on_content.end(),
-                      [current](u64 tid) { return CheckAOCTitleIDMatchesBase(tid, current); }));
+    *out_count = static_cast<u32>(GetAOCTitleIDsForBase(add_on_content, current).size());
 
     R_SUCCEED();
 }
@@ -201,18 +208,16 @@ Result IAddOnContentManager::ListAddOnContentByApplicationId(
     const auto current = FileSys::GetBaseTitleID(application_id);
 
     std::vector<u32> out;
+    const auto matching_aocs = GetAOCTitleIDsForBase(add_on_content, current);
     const auto& disabled = Settings::values.disabled_addons[current];
     if (std::find(disabled.begin(), disabled.end(), "DLC") == disabled.end()) {
         LOG_WARNING(Service_AOC, "Filtering AOCs for base title ID: {:016X}", current);
-        for (u64 content_id : add_on_content) {
-            const auto aoc_base = FileSys::GetBaseTitleID(content_id);
-            if (aoc_base != current) {
-                continue;
-            }
-
-            LOG_WARNING(Service_AOC, "Match! AOC {:016X} belongs to current app. Adding to list.",
-                        content_id);
-            out.push_back(static_cast<u32>(FileSys::GetAOCID(content_id)));
+        for (std::size_t i = 0; i < matching_aocs.size(); ++i) {
+            const auto guest_index = GetGuestAOCIndex(i);
+            LOG_WARNING(Service_AOC,
+                        "Match! AOC {:016X} belongs to current app. Adding guest_index={}.",
+                        matching_aocs[i], guest_index);
+            out.push_back(guest_index);
         }
     } else {
         LOG_WARNING(Service_AOC, "DLCs are disabled for this title {:016X}", current);
@@ -231,13 +236,12 @@ Result IAddOnContentManager::ListAddOnContentByApplicationId(
 
     for (u32 i = 0; i < *out_count; ++i) {
         const auto addon_index = out[offset + i];
-        const auto reconstructed_title_id =
-            FileSys::GetAOCBaseTitleID(current) + addon_index;
+        const auto physical_title_id = matching_aocs[addon_index - 1];
 
         LOG_WARNING(Service_AOC,
                     "ListAddOnContentByApplicationId output[{}]: addon_index={}, "
-                    "title_id={:016X}",
-                    i, addon_index, reconstructed_title_id);
+                    "physical_title_id={:016X}",
+                    i, addon_index, physical_title_id);
     }
 
     std::rotate(out.begin(), out.begin() + offset, out.end());
@@ -275,13 +279,16 @@ Result IAddOnContentManager::GetAddOnContentBaseId(Out<u64> out_title_id,
 Result IAddOnContentManager::PrepareAddOnContent(s32 addon_index, ClientProcessId process_id) {
     const auto program_id = system.GetApplicationProcessProgramID();
     const auto aoc_base_id = FileSys::GetAOCBaseTitleID(program_id);
-    const auto reconstructed_title_id =
-        aoc_base_id + static_cast<u64>(static_cast<u32>(addon_index));
+    const auto matching_aocs = GetAOCTitleIDsForBase(add_on_content, program_id);
+    u64 physical_title_id = 0;
+    if (addon_index > 0 && static_cast<std::size_t>(addon_index) <= matching_aocs.size()) {
+        physical_title_id = matching_aocs[static_cast<std::size_t>(addon_index) - 1];
+    }
 
     LOG_WARNING(Service_AOC,
                 "PrepareAddOnContent: program_id={:016X}, aoc_base={:016X}, "
-                "addon_index={}, title_id={:016X}, process_id={}",
-                program_id, aoc_base_id, addon_index, reconstructed_title_id,
+                "addon_index={}, physical_title_id={:016X}, process_id={}",
+                program_id, aoc_base_id, addon_index, physical_title_id,
                 process_id.pid);
 
     R_SUCCEED();
