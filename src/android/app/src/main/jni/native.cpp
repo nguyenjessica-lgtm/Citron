@@ -964,7 +964,7 @@ jboolean Java_org_citron_citron_1emu_NativeLibrary_areKeysPresent(JNIEnv* env, j
 
     const bool refreshed_content = session.RefreshContentIfIdle(keys_loaded);
 
-    LOG_INFO(Frontend, "areKeysPresent: refreshed_content={!}", refreshed_content);
+    LOG_INFO(Frontend, "areKeysPresent: refreshed_content={}", refreshed_content);
 
     return ContentManager::AreKeysPresent();
 }
