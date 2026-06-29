@@ -100,7 +100,6 @@ private:
     };
     [[nodiscard]] ActiveUpdate GetActiveUpdate() const;
 
-    [[nodiscard]] VirtualFile FindAutoloaderNCA(ContentRecordType type) const;
     [[nodiscard]] std::vector<VirtualFile> CollectPatches(const std::vector<VirtualDir>& patch_dirs,
                                                           const std::string& build_id) const;
 

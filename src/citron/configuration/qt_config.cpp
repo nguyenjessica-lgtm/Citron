@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: 2025 citron Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include "common/fs/path_util.h"
 #include "common/logging.h"
 #include "input_common/main.h"
 #include "qt_config.h"
@@ -253,6 +254,18 @@ void QtConfig::ReadPathValues() {
             .split(QStringLiteral(", "), Qt::SkipEmptyParts, Qt::CaseSensitive);
 
     ReadCategory(Settings::Category::Paths);
+
+    // On first run (or if the user has never configured external content dirs),
+    // pre-populate with the default sdmc/citron/content directory so NSPs dropped
+    // there are picked up automatically by ExternalContentProvider.
+    // Placed after ReadCategory(Paths) so Settings::values.sdmc_dir is resolved
+    // before we call GetCitronPath(SDMCDir).
+    if (Settings::values.external_content_dirs.empty()) {
+        const auto default_content_dir =
+            Common::FS::GetCitronPath(Common::FS::CitronPath::SDMCDir) / "citron" / "content";
+        Settings::values.external_content_dirs.push_back(
+            Common::FS::PathToUTF8String(default_content_dir));
+    }
 
     EndGroup();
 }

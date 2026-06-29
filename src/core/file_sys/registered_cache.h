@@ -200,9 +200,8 @@ private:
                             std::function<T(const CNMT&, const ContentRecord&)> proc,
                             std::function<bool(const CNMT&, const ContentRecord&)> filter) const;
     std::vector<NcaID> AccumulateFiles() const;
-    void ProcessFiles(const std::vector<NcaID>& ids, std::map<u64, CNMT>& out_meta,
-                      std::map<u64, NcaID>& out_meta_id) const;
-    void AccumulateCitronMeta(std::map<u64, CNMT>& out_citron_meta) const;
+    void ProcessFiles(const std::vector<NcaID>& ids);
+    void AccumulateCitronMeta();
     std::optional<NcaID> GetNcaIDFromMetadata(u64 title_id, ContentRecordType type) const;
     VirtualFile GetFileAtID(NcaID id) const;
     VirtualFile OpenFileOrDirectoryConcat(const VirtualDir& open_dir, std::string_view path) const;
@@ -222,8 +221,6 @@ private:
 };
 
 enum class ContentProviderUnionSlot {
-    Autoloader, ///< Separate functionality for multiple Updates/DLCs without being overwritten by
-                ///< NAND.
     SysNAND,        ///< System NAND
     UserNAND,       ///< User NAND
     SDMC,           ///< SD Card
