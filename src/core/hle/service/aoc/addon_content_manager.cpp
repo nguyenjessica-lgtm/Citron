@@ -252,7 +252,8 @@ Result IAddOnContentManager::GetAddOnContentBaseId(Out<u64> out_title_id,
 }
 
 Result IAddOnContentManager::PrepareAddOnContent(s32 addon_index, ClientProcessId process_id) {
-    const auto program_id = system.GetApplicationProcessProgramID();
+    const auto raw_program_id = system.GetApplicationProcessProgramID();
+    const auto program_id = FileSys::GetBaseTitleID(raw_program_id);
     const auto aoc_base_id = FileSys::GetAOCBaseTitleID(program_id);
     const auto matching_aocs = GetAOCTitleIDsForBase(add_on_content, program_id);
     u64 physical_title_id = 0;
@@ -260,11 +261,12 @@ Result IAddOnContentManager::PrepareAddOnContent(s32 addon_index, ClientProcessI
         physical_title_id = matching_aocs[static_cast<std::size_t>(addon_index) - 1];
     }
 
-    LOG_WARNING(Service_AOC,
-                "PrepareAddOnContent: program_id={:016X}, aoc_base={:016X}, "
-                "addon_index={}, physical_title_id={:016X}, process_id={}",
-                program_id, aoc_base_id, addon_index, physical_title_id,
-                process_id.pid);
+    LOG_DEBUG(Service_AOC,
+              "PrepareAddOnContent: raw_program_id={:016X}, base_id={:016X}, "
+              "aoc_base={:016X}, accumulated={}, matched={}, addon_index={}, "
+              "physical_title_id={:016X}, process_id={}",
+              raw_program_id, program_id, aoc_base_id, add_on_content.size(),
+              matching_aocs.size(), addon_index, physical_title_id, process_id.pid);
 
     R_SUCCEED();
 }
