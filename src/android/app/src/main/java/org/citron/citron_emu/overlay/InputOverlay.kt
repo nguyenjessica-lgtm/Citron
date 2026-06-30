@@ -126,7 +126,8 @@ class InputOverlay(context: Context, attrs: AttributeSet?) :
                 when (event.keyCode) {
                     KeyEvent.KEYCODE_BACK,
                     KeyEvent.KEYCODE_DEL,
-                    KeyEvent.KEYCODE_ENTER -> NativeLibrary.submitInlineKeyboardInput(event.keyCode)
+                    KeyEvent.KEYCODE_ENTER,
+                    KeyEvent.KEYCODE_ESCAPE -> NativeLibrary.submitInlineKeyboardInput(event.keyCode)
                     else -> {
                         val unicode = event.unicodeChar
                         if (unicode != 0) {

@@ -227,16 +227,22 @@ void AndroidKeyboard::SubmitInlineKeyboardInput(int key_code) {
     static constexpr int KEYCODE_BACK = 4;
     static constexpr int KEYCODE_ENTER = 66;
     static constexpr int KEYCODE_DEL = 67;
+    static constexpr int KEYCODE_ESCAPE = 111;
 
     if (!m_is_inline_active) {
         return;
     }
 
     switch (key_code) {
-    case KEYCODE_BACK:
     case KEYCODE_ENTER:
         m_is_inline_active = false;
         submit_inline_callback(Service::AM::Frontend::SwkbdReplyType::DecidedEnter, m_current_text,
+                               static_cast<s32>(m_current_text.size()));
+        break;
+    case KEYCODE_BACK:
+    case KEYCODE_ESCAPE:
+        m_is_inline_active = false;
+        submit_inline_callback(Service::AM::Frontend::SwkbdReplyType::DecidedCancel, m_current_text,
                                static_cast<s32>(m_current_text.size()));
         break;
     case KEYCODE_DEL:
