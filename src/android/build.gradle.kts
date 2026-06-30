@@ -8,7 +8,7 @@ plugins {
     id("org.jetbrains.kotlin.android") version "2.4.0" apply false
 }
 
-tasks.register("clean") {
+tasks.register<Delete>("clean") {
     description = "Cleans project build outputs"
     delete(layout.buildDirectory)
 }
