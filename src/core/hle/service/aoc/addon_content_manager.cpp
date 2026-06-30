@@ -39,31 +39,30 @@ static std::vector<u64> AccumulateAOCTitleIDs(Core::System& system) {
     const auto& rcu = system.GetContentProvider();
     const auto list =
         rcu.ListEntriesFilter(FileSys::TitleType::AOC, FileSys::ContentRecordType::Data);
-
     for (const auto& entry : list) {
-        // Verify the NCA opens successfully
-        if (rcu.GetEntry(entry.title_id, FileSys::ContentRecordType::Data)->GetStatus() !=
-            Loader::ResultStatus::Success)
-            continue;
-
-        const u64 base = FileSys::GetBaseTitleID(entry.title_id);
-        const auto& disabled = Settings::values.disabled_addons[base];
-
-        // Global DLC toggle — all DLC for this title disabled
-        if (std::find(disabled.begin(), disabled.end(), "DLC") != disabled.end())
-            continue;
-
-        // Per-item toggle — key matches what GetPatches emits ("DLC XXXX")
-        const u32 index = static_cast<u32>((entry.title_id - base) / 0x1000);
-        const auto item_key = fmt::format("DLC {:04d}", index);
-        if (std::find(disabled.begin(), disabled.end(), item_key) != disabled.end())
-            continue;
-
-        add_on_content.push_back(entry.title_id);
+        if (rcu.GetEntry(entry.title_id, FileSys::ContentRecordType::Data)->GetStatus() ==
+            Loader::ResultStatus::Success) {
+            add_on_content.push_back(entry.title_id);
+        }
     }
-
     LOG_DEBUG(Service_AOC, "Accumulated {} AOC title IDs", add_on_content.size());
     return add_on_content;
+}
+
+static std::vector<u64> GetAOCTitleIDsForBase(const std::vector<u64>& add_on_content, u64 base) {
+    std::vector<u64> out;
+    for (const auto title_id : add_on_content) {
+        if (CheckAOCTitleIDMatchesBase(title_id, base)) {
+            out.push_back(title_id);
+        }
+    }
+
+    std::sort(out.begin(), out.end());
+    return out;
+}
+
+static u32 GetGuestAOCIndex(std::size_t ordinal) {
+    return static_cast<u32>(ordinal + 1);
 }
 
 IAddOnContentManager::IAddOnContentManager(Core::System& system_)
@@ -107,12 +106,24 @@ IAddOnContentManager::~IAddOnContentManager() {
 
 Result IAddOnContentManager::CountAddOnContent(Out<u32> out_count, ClientProcessId process_id) {
     LOG_DEBUG(Service_AOC, "called. process_id={}", process_id.pid);
-
     const auto current = system.GetApplicationProcessProgramID();
-    *out_count = static_cast<u32>(
-        std::count_if(add_on_content.begin(), add_on_content.end(),
-                      [current](u64 tid) { return CheckAOCTitleIDMatchesBase(tid, current); }));
+    const auto& disabled = Settings::values.disabled_addons[current];
 
+    if (std::find(disabled.begin(), disabled.end(), "DLC") != disabled.end()) {
+        *out_count = 0;
+        R_SUCCEED();
+    }
+
+    const auto matching_aocs = GetAOCTitleIDsForBase(add_on_content, current);
+    u32 enabled_count = 0;
+    for (const u64 aoc_tid : matching_aocs) {
+        // Key matches what GetPatches emits: "DLC {:04d}" using GetAOCID (& 0x7FF)
+        const auto item_key = fmt::format("DLC {:04d}", aoc_tid & FileSys::AOC_TITLE_ID_MASK);
+        if (std::find(disabled.begin(), disabled.end(), item_key) == disabled.end()) {
+            ++enabled_count;
+        }
+    }
+    *out_count = enabled_count;
     R_SUCCEED();
 }
 
@@ -123,32 +134,59 @@ Result IAddOnContentManager::ListAddOnContent(Out<u32> out_count,
               process_id.pid);
 
     const auto current = FileSys::GetBaseTitleID(system.GetApplicationProcessProgramID());
+    const auto& disabled = Settings::values.disabled_addons[current];
 
-    std::vector<u32> out;
-    for (u64 content_id : add_on_content) {
-        if (FileSys::GetBaseTitleID(content_id) == current)
-            out.push_back(static_cast<u32>(FileSys::GetAOCID(content_id)));
+    if (std::find(disabled.begin(), disabled.end(), "DLC") != disabled.end()) {
+        *out_count = 0;
+        R_SUCCEED();
     }
 
-    // TODO(DarkLordZach): Find the correct error code.
+    const auto matching_aocs = GetAOCTitleIDsForBase(add_on_content, current);
+
+    // Emit sorted ordinals (1-based position in the full sorted list).
+    // Disabled items are skipped, but ordinals come from positions in the FULL list so
+    // fsp_srv.cpp's GetAOCPhysicalTitleIDsForBase can resolve them correctly without
+    // needing to know which items were disabled.
+    std::vector<u32> out;
+    for (std::size_t i = 0; i < matching_aocs.size(); ++i) {
+        const auto item_key =
+            fmt::format("DLC {:04d}", matching_aocs[i] & FileSys::AOC_TITLE_ID_MASK);
+        if (std::find(disabled.begin(), disabled.end(), item_key) != disabled.end()) {
+            continue;
+        }
+        out.push_back(GetGuestAOCIndex(i));
+    }
+
     R_UNLESS(out.size() >= offset, ResultUnknown);
 
-    *out_count = static_cast<u32>(std::min<size_t>(out.size() - offset, count));
+    const auto buffer_count = out_addons.size() / sizeof(u32);
+    *out_count = static_cast<u32>(
+        std::min({out.size() - offset, static_cast<size_t>(count), buffer_count}));
     std::rotate(out.begin(), out.begin() + offset, out.end());
     std::memcpy(out_addons.data(), out.data(), *out_count * sizeof(u32));
-
     R_SUCCEED();
 }
 
 Result IAddOnContentManager::CountAddOnContentByApplicationId(Out<u32> out_count,
                                                               u64 application_id) {
     LOG_DEBUG(Service_AOC, "called. application_id={:016X}", application_id);
+    const auto current = FileSys::GetBaseTitleID(application_id);
+    const auto& disabled = Settings::values.disabled_addons[current];
 
-    const auto current = application_id;
-    *out_count = static_cast<u32>(
-        std::count_if(add_on_content.begin(), add_on_content.end(),
-                      [current](u64 tid) { return CheckAOCTitleIDMatchesBase(tid, current); }));
+    if (std::find(disabled.begin(), disabled.end(), "DLC") != disabled.end()) {
+        *out_count = 0;
+        R_SUCCEED();
+    }
 
+    const auto matching_aocs = GetAOCTitleIDsForBase(add_on_content, current);
+    u32 enabled_count = 0;
+    for (const u64 aoc_tid : matching_aocs) {
+        const auto item_key = fmt::format("DLC {:04d}", aoc_tid & FileSys::AOC_TITLE_ID_MASK);
+        if (std::find(disabled.begin(), disabled.end(), item_key) == disabled.end()) {
+            ++enabled_count;
+        }
+    }
+    *out_count = enabled_count;
     R_SUCCEED();
 }
 
@@ -159,28 +197,39 @@ Result IAddOnContentManager::ListAddOnContentByApplicationId(
               count, application_id);
 
     const auto current = FileSys::GetBaseTitleID(application_id);
+    const auto& disabled = Settings::values.disabled_addons[current];
 
-    std::vector<u32> out;
-    for (u64 content_id : add_on_content) {
-        if (FileSys::GetBaseTitleID(content_id) == current)
-            out.push_back(static_cast<u32>(FileSys::GetAOCID(content_id)));
+    if (std::find(disabled.begin(), disabled.end(), "DLC") != disabled.end()) {
+        *out_count = 0;
+        R_SUCCEED();
     }
 
-    // TODO(DarkLordZach): Find the correct error code.
+    const auto matching_aocs = GetAOCTitleIDsForBase(add_on_content, current);
+
+    std::vector<u32> out;
+    for (std::size_t i = 0; i < matching_aocs.size(); ++i) {
+        const auto item_key =
+            fmt::format("DLC {:04d}", matching_aocs[i] & FileSys::AOC_TITLE_ID_MASK);
+        if (std::find(disabled.begin(), disabled.end(), item_key) != disabled.end()) {
+            continue;
+        }
+        out.push_back(GetGuestAOCIndex(i));
+    }
+
     R_UNLESS(out.size() >= offset, ResultUnknown);
 
-    *out_count = static_cast<u32>(std::min<size_t>(out.size() - offset, count));
+    const auto buffer_count = out_addons.size() / sizeof(u32);
+    *out_count = static_cast<u32>(
+        std::min({out.size() - offset, static_cast<size_t>(count), buffer_count}));
     std::rotate(out.begin(), out.begin() + offset, out.end());
-
     std::memcpy(out_addons.data(), out.data(), *out_count * sizeof(u32));
-
     R_SUCCEED();
 }
 
 Result IAddOnContentManager::GetAddOnContentBaseId(Out<u64> out_title_id,
                                                    ClientProcessId process_id) {
-    LOG_DEBUG(Service_AOC, "called. process_id={}", process_id.pid);
-
+    // LOG_DEBUG(Service_AOC, "called. process_id={}", process_id.pid);
+    LOG_WARNING(Service_AOC, "GetAddOnContentBaseId called. process_id={}", process_id.pid);
     const auto title_id = system.GetApplicationProcessProgramID();
     const FileSys::PatchManager pm{title_id, system.GetFileSystemController(),
                                    system.GetContentProvider()};
@@ -188,16 +237,33 @@ Result IAddOnContentManager::GetAddOnContentBaseId(Out<u64> out_title_id,
     const auto res = pm.GetControlMetadata();
     if (res.first == nullptr) {
         *out_title_id = FileSys::GetAOCBaseTitleID(title_id);
+        LOG_WARNING(Service_AOC,
+            "GetAddOnContentBaseId fallback: program_id={:016X}, aoc_base={:016X}",
+            title_id, *out_title_id);
         R_SUCCEED();
     }
 
     *out_title_id = res.first->GetDLCBaseTitleId();
+    LOG_WARNING(Service_AOC,
+            "GetAddOnContentBaseId metadata: program_id={:016X}, aoc_base={:016X}",
+            title_id, *out_title_id);
 
     R_SUCCEED();
 }
 
 Result IAddOnContentManager::PrepareAddOnContent(s32 addon_index, ClientProcessId process_id) {
-    LOG_WARNING(Service_AOC, "(STUBBED) called with addon_index={}, process_id={}", addon_index,
+    const auto program_id = system.GetApplicationProcessProgramID();
+    const auto aoc_base_id = FileSys::GetAOCBaseTitleID(program_id);
+    const auto matching_aocs = GetAOCTitleIDsForBase(add_on_content, program_id);
+    u64 physical_title_id = 0;
+    if (addon_index > 0 && static_cast<std::size_t>(addon_index) <= matching_aocs.size()) {
+        physical_title_id = matching_aocs[static_cast<std::size_t>(addon_index) - 1];
+    }
+
+    LOG_WARNING(Service_AOC,
+                "PrepareAddOnContent: program_id={:016X}, aoc_base={:016X}, "
+                "addon_index={}, physical_title_id={:016X}, process_id={}",
+                program_id, aoc_base_id, addon_index, physical_title_id,
                 process_id.pid);
 
     R_SUCCEED();

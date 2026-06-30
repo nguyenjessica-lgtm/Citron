@@ -770,6 +770,9 @@ std::vector<Patch> PatchManager::GetPatches(VirtualFile update_raw) const {
     }
 
     // --- 4. NAND DLC ---
+    // Emit one row per DLC so the Properties UI can toggle individual items.
+    // Key format "DLC {:04d}" uses GetAOCID (title_id & 0x7FF), matching what
+    // ListAddOnContent and CountAddOnContent check in disabled_addons.
     const auto dlc_entries =
         content_provider.ListEntriesFilter(TitleType::AOC, ContentRecordType::Data);
     std::vector<ContentProviderEntry> dlc_match;
@@ -782,19 +785,21 @@ std::vector<Patch> PatchManager::GetPatches(VirtualFile update_raw) const {
                  });
     if (!dlc_match.empty()) {
         std::sort(dlc_match.begin(), dlc_match.end());
-        std::string list;
-        for (size_t i = 0; i < dlc_match.size() - 1; ++i)
-            list += fmt::format("{}, ", dlc_match[i].title_id & 0x7FF);
-        list += fmt::format("{}", dlc_match.back().title_id & 0x7FF);
-
-        const auto dlc_disabled =
+        const bool global_dlc_disabled =
             std::find(disabled.begin(), disabled.end(), "DLC") != disabled.end();
-        out.push_back({.enabled = !dlc_disabled,
-                       .name = "DLC",
-                       .version = std::move(list),
-                       .type = PatchType::DLC,
-                       .program_id = title_id,
-                       .title_id = title_id});
+        for (const auto& dlc : dlc_match) {
+            const u32 aoc_id = static_cast<u32>(dlc.title_id & 0x7FF);
+            const auto item_key = fmt::format("DLC {:04d}", aoc_id);
+            const bool item_disabled =
+                global_dlc_disabled ||
+                std::find(disabled.begin(), disabled.end(), item_key) != disabled.end();
+            out.push_back({.enabled = !item_disabled,
+                           .name = item_key,
+                           .version = fmt::format("{}", aoc_id),
+                           .type = PatchType::DLC,
+                           .program_id = title_id,
+                           .title_id = dlc.title_id});
+        }
     }
 
     // Scan for Game-Specific Tools
