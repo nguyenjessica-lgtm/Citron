@@ -255,16 +255,19 @@ void QtConfig::ReadPathValues() {
 
     ReadCategory(Settings::Category::Paths);
 
-    // On first run (or if the user has never configured external content dirs),
-    // pre-populate with the default sdmc/citron/content directory so NSPs dropped
-    // there are picked up automatically by ExternalContentProvider.
+    // Seed the default sdmc/citron/content directory exactly once, the first time
+    // this setting is ever loaded. Gating on the dedicated seeded flag (rather than
+    // external_content_dirs.empty()) means a user who explicitly clears the list via
+    // Settings -> General -> Remove keeps it cleared on subsequent launches, instead
+    // of having the default silently reappear every time the vector happens to be empty.
     // Placed after ReadCategory(Paths) so Settings::values.sdmc_dir is resolved
     // before we call GetCitronPath(SDMCDir).
-    if (Settings::values.external_content_dirs.empty()) {
+    if (!Settings::values.external_content_dirs_seeded.GetValue()) {
         const auto default_content_dir =
             Common::FS::GetCitronPath(Common::FS::CitronPath::SDMCDir) / "citron" / "content";
         Settings::values.external_content_dirs.push_back(
             Common::FS::PathToUTF8String(default_content_dir));
+        Settings::values.external_content_dirs_seeded.SetValue(true);
     }
 
     EndGroup();

@@ -47,7 +47,7 @@
 namespace FileSys {
 namespace {
 // patch_manager.cpp only
-inline const ContentProviderUnion* GetUnionProvider(const ContentProvider& p) {
+const ContentProviderUnion* GetUnionProvider(const ContentProvider& p) {
     return p.IsUnionProvider()
         ? static_cast<const ContentProviderUnion*>(&p)
         : nullptr;
@@ -514,6 +514,14 @@ VirtualFile PatchManager::PatchRomFS(const NCA* base_nca, VirtualFile base_romfs
         }
     }
 
+    if (type == ContentRecordType::Program || type == ContentRecordType::Control) {
+        LOG_INFO(Loader,
+                 "PatchRomFS update lookup: title_id={:016X}, type={:02X}, found_best={}, "
+                 "best_version={}, best_update_raw={}",
+                 title_id, static_cast<u32>(type), found_best, best_version,
+                 best_update_raw != nullptr);
+    }
+
     // 3. Packed Update (Fallback)
     if (!found_best && packed_update_raw != nullptr) {
         const auto patch_disabled =
@@ -606,13 +614,22 @@ std::vector<Patch> PatchManager::GetPatches(VirtualFile update_raw) const {
     // Next, check for external updates
     if (content_provider_union) {
         // Capture the NAND update's numeric version before iterating external entries.
-        // The NAND entry's .version is a NACP display string ("1.4.2"), while
-        // canonical_version_str below is FormatTitleVersion format ("v1.4.2").
-        // A string comparison alone will miss the match; compare numerically instead.
-        const auto nand_numeric_version =
-            (is_nand_control || is_nand_program)
-                ? content_provider.GetEntryVersion(update_tid)
-                : std::nullopt;
+        // Query the NAND slots explicitly (not content_provider.GetEntryVersion(), which
+        // resolves across the WHOLE union including External) so an external-only update
+        // can never be misread as a NAND version and wrongly deduped against itself.
+        std::optional<u32> nand_numeric_version;
+        if (is_nand_control || is_nand_program) {
+            if (const auto* sys = content_provider_union->GetSlotProvider(
+                    ContentProviderUnionSlot::SysNAND)) {
+                nand_numeric_version = sys->GetEntryVersion(update_tid);
+            }
+            if (!nand_numeric_version) {
+                if (const auto* user = content_provider_union->GetSlotProvider(
+                        ContentProviderUnionSlot::UserNAND)) {
+                    nand_numeric_version = user->GetEntryVersion(update_tid);
+                }
+            }
+        }
 
         const auto updates = content_provider_union->ListExternalUpdateVersions(update_tid);
         for (const auto& update : updates) {
@@ -988,6 +1005,10 @@ PatchManager::Metadata PatchManager::GetControlMetadata() const {
     std::unique_ptr<NCA> control_nca = nullptr;
 
     const auto active_update = GetActiveUpdate();
+    LOG_INFO(Loader,
+             "GetControlMetadata: title_id={:016X}, active_update_found={}, version={}, "
+             "is_external={}",
+             title_id, active_update.found, active_update.version, active_update.is_external);
     if (active_update.found) {
         const auto update_tid = GetUpdateTitleID(title_id);
         if (active_update.is_external) {
@@ -1002,14 +1023,20 @@ PatchManager::Metadata PatchManager::GetControlMetadata() const {
         } else {
             control_nca = content_provider.GetEntry(update_tid, ContentRecordType::Control);
         }
+        LOG_INFO(Loader, "GetControlMetadata: update control_nca={}", control_nca != nullptr);
     }
 
     if (control_nca == nullptr) {
         control_nca = content_provider.GetEntry(title_id, ContentRecordType::Control);
+        LOG_INFO(Loader, "GetControlMetadata: base control_nca={}", control_nca != nullptr);
     }
 
-    if (control_nca == nullptr)
+    if (control_nca == nullptr) {
+        LOG_WARNING(Loader, "GetControlMetadata: no control NCA for title_id={:016X}", title_id);
         return {};
+    }
+    LOG_INFO(Loader, "GetControlMetadata: selected control status={}, type={:02X}",
+             static_cast<u32>(control_nca->GetStatus()), static_cast<u32>(control_nca->GetType()));
     return ParseControlNCA(*control_nca);
 }
 

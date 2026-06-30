@@ -84,8 +84,15 @@ AppLoader_NCA::LoadResult AppLoader_NCA::Load(Kernel::KProcess& process, Core::S
             } else {
                 // NAND / system update — GetActiveUpdate already checked disabled_addons
                 // and selected this as the highest enabled version.
-                update_nca =
-                    installed.GetEntry(update_tid, FileSys::ContentRecordType::Program);
+                // Fetch the raw entry and construct the NCA with nca.get() as base,
+                // matching the external-content branch above. ContentProvider::GetEntry()
+                // would construct the NCA with no base reference, which breaks
+                // delta-patched ExeFS content for sparse-base titles whose update NCA
+                // is stored relative to the base.
+                if (auto raw = installed.GetEntryRaw(update_tid,
+                                                     FileSys::ContentRecordType::Program)) {
+                    update_nca = std::make_unique<FileSys::NCA>(raw, nca.get());
+                }
             }
         }
 

@@ -92,14 +92,19 @@ public:
     // Version of GetControlMetadata that takes an arbitrary NCA
     [[nodiscard]] Metadata ParseControlNCA(const NCA& nca) const;
 
-private:
     struct ActiveUpdate {
         u32 version = 0;
         bool found = false;
         bool is_external = false;
     };
+
+    // Resolves the highest-versioned, non-disabled update for this title across
+    // NAND and External providers. Used by GetPatches/PatchExeFS/PatchRomFS
+    // internally, and by the loader (core/loader/nca.cpp) for sparse-base titles
+    // whose ExeFS lives entirely in the update NCA rather than the base NCA.
     [[nodiscard]] ActiveUpdate GetActiveUpdate() const;
 
+private:
     [[nodiscard]] std::vector<VirtualFile> CollectPatches(const std::vector<VirtualDir>& patch_dirs,
                                                           const std::string& build_id) const;
 

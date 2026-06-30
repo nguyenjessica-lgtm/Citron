@@ -106,7 +106,7 @@ IAddOnContentManager::~IAddOnContentManager() {
 
 Result IAddOnContentManager::CountAddOnContent(Out<u32> out_count, ClientProcessId process_id) {
     LOG_DEBUG(Service_AOC, "called. process_id={}", process_id.pid);
-    const auto current = system.GetApplicationProcessProgramID();
+    const auto current = FileSys::GetBaseTitleID(system.GetApplicationProcessProgramID());
     const auto& disabled = Settings::values.disabled_addons[current];
 
     if (std::find(disabled.begin(), disabled.end(), "DLC") != disabled.end()) {

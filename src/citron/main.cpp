@@ -452,7 +452,7 @@ GMainWindow::GMainWindow(std::unique_ptr<QtConfig> config_, bool has_broken_vulk
 
     // 1. First, create the factories
     LOG_INFO(Frontend, "Initializing factories...");
-    system->GetFileSystemController().CreateFactories(*vfs);
+    system->GetFileSystemController().InitializeContentSystem(*vfs);
 
     // Remove cached contents generated during the previous session
     RemoveCachedContents();
@@ -2546,7 +2546,7 @@ void GMainWindow::OnEmulationStopped() {
     game_list->CancelPopulation();
 
     // This is necessary to reset the in-memory state for the next launch.
-    system->GetFileSystemController().CreateFactories(*vfs, true);
+    system->GetFileSystemController().InitializeContentSystem(*vfs, true);
 
     // Refresh the game list now that the filesystem is valid again.
     game_list->ClearLaunchOverlays();
@@ -5120,7 +5120,7 @@ void GMainWindow::OnInstallFirmwareFromZip() {
     }
 
     // Re-scan VFS for the newly placed firmware files.
-    system->GetFileSystemController().CreateFactories(*vfs);
+    system->GetFileSystemController().InitializeContentSystem(*vfs);
 
     auto VerifyFirmwareCallback = [&](size_t total_size, size_t processed_size) {
         progress.setValue(85 + static_cast<int>((processed_size * 15) / total_size));
@@ -5284,7 +5284,7 @@ void GMainWindow::OnInstallFirmware() {
     }
 
     // Re-scan VFS for the newly placed firmware files.
-    system->GetFileSystemController().CreateFactories(*vfs);
+    system->GetFileSystemController().InitializeContentSystem(*vfs);
 
     auto VerifyFirmwareCallback = [&](size_t total_size, size_t processed_size) {
         progress.setValue(90 + static_cast<int>((processed_size * 10) / total_size));
@@ -5381,7 +5381,7 @@ void GMainWindow::OnInstallDecryptionKeys() {
     // and re-populate the game list in the UI if the user has already added
     // game folders.
     Core::Crypto::KeyManager::Instance().ReloadKeys();
-    system->GetFileSystemController().CreateFactories(*vfs);
+    system->GetFileSystemController().InitializeContentSystem(*vfs);
     game_list->PopulateAsync(UISettings::values.game_dirs);
 
     if (ContentManager::AreKeysPresent()) {
@@ -6056,7 +6056,7 @@ void GMainWindow::OnMouseActivity() {
 }
 
 void GMainWindow::OnCheckFirmwareDecryption() {
-    system->GetFileSystemController().CreateFactories(*vfs);
+    system->GetFileSystemController().InitializeContentSystem(*vfs);
     if (!ContentManager::AreKeysPresent()) {
         QMessageBox::warning(this, tr("Derivation Components Missing"),
                              tr("Encryption keys are missing. "
