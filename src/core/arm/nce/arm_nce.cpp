@@ -184,21 +184,11 @@ bool ArmNce::HandleFailedGuestFault(GuestContext* guest_ctx, void* raw_info, voi
     // We can't handle the access, so determine why we crashed.
     const bool is_prefetch_abort = host_ctx.pc == reinterpret_cast<u64>(info->si_addr);
 
+    // For data aborts, skip the instruction and return to guest code.
+    // This preserves the historical NCE behavior while branch relocation fallback is tested.
     if (!is_prefetch_abort) {
-        u32 instruction{};
-        std::memcpy(&instruction, reinterpret_cast<const void*>(host_ctx.pc), sizeof(instruction));
-        LOG_CRITICAL(Core_ARM,
-                     "Unhandled NCE data abort: pc={:#x}, fault_addr={:#x}, instruction={:#010x}",
-                     host_ctx.pc, reinterpret_cast<u64>(info->si_addr), instruction);
-        guest_ctx->esr_el1.fetch_or(static_cast<u64>(HaltReason::DataAbort));
-
-        // Forcibly mark the context as locked. We are still running.
-        auto& thread_params = guest_ctx->parent->m_running_thread->GetNativeExecutionParameters();
-        thread_params.lock.store(SpinLockLocked);
-
-        // Return to host.
-        SaveGuestContext(guest_ctx, raw_context);
-        return false;
+        host_ctx.pc += 4;
+        return true;
     }
 
     // This is a prefetch abort.
