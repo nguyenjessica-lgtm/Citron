@@ -29,11 +29,6 @@ struct sigaction g_orig_segv_action;
 
 void ForwardSignalToOriginalAction(int sig, siginfo_t* info, void* raw_context,
                                    const struct sigaction& original) {
-    if ((original.sa_flags & SA_SIGINFO) != 0 && original.sa_sigaction != nullptr) {
-        original.sa_sigaction(sig, info, raw_context);
-        return;
-    }
-
     if (original.sa_handler == SIG_IGN) {
         return;
     }
@@ -44,7 +39,12 @@ void ForwardSignalToOriginalAction(int sig, siginfo_t* info, void* raw_context,
         return;
     }
 
-    if (original.sa_handler != nullptr) {
+    if ((original.sa_flags & SA_SIGINFO) != 0 && original.sa_sigaction != nullptr) {
+        original.sa_sigaction(sig, info, raw_context);
+        return;
+    }
+
+    if ((original.sa_flags & SA_SIGINFO) == 0 && original.sa_handler != nullptr) {
         original.sa_handler(sig);
         return;
     }
