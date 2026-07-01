@@ -833,6 +833,7 @@ bool IsGPULevelNormal();
 bool IsFastmemEnabled();
 bool IsCpuUltraLowAccuracy();
 void SetNceEnabled(bool is_64bit);
+void DisableNceForCurrentProcess();
 bool IsNceEnabled();
 
 bool IsDockedMode();
