@@ -272,7 +272,7 @@
     <string name="fastmem">Fastmem</string>
     <string name="logging">Logging</string>
     <string name="log_filter">Log Filter</string>
-    <string name="log_filter_description">Configure which log messages to display. Format: &lt;class&gt;:&lt;level&gt;. Example: *:Info Service:Debug</string>
+    <string name="log_filter_description">Configure which log messages to display. Format: &lt;class&gt;:&lt;level&gt;. Example: *:Warning Service:Debug</string>
 
     <!-- Audio settings strings -->
     <string name="audio_output_engine">Output engine</string>
