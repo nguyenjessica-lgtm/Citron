@@ -150,7 +150,9 @@ std::optional<VAddr> AppLoader_NSO::LoadModule(Kernel::KProcess& process, Core::
     // Apply patches if necessary
     const auto name = nso_file.GetName();
     const bool has_nso_patch = pm && pm->HasNSOPatch(nso_header.build_id, name);
-    if (pm && (has_nso_patch || Settings::values.dump_nso)) {
+    const bool should_patch_nso =
+        has_nso_patch || (load_into_process && Settings::values.dump_nso);
+    if (pm && should_patch_nso) {
         std::span<u8> patchable_section(program_image.data() + module_start,
                                         program_image.size() - module_start);
         std::vector<u8> pi_header(sizeof(NSOHeader) + patchable_section.size());
@@ -159,6 +161,21 @@ std::optional<VAddr> AppLoader_NSO::LoadModule(Kernel::KProcess& process, Core::
                     patchable_section.size());
 
         pi_header = pm->PatchNSO(pi_header, name);
+
+        if (pi_header.size() < sizeof(NSOHeader)) {
+            LOG_ERROR(Loader, "Patched NSO is too small: module={}, patched_size={:#x}", name,
+                      pi_header.size());
+            return std::nullopt;
+        }
+
+        const auto patched_size = pi_header.size() - sizeof(NSOHeader);
+        if (patched_size != patchable_section.size()) {
+            LOG_ERROR(Loader,
+                      "Patched NSO size mismatch: module={}, original_size={:#x}, "
+                      "patched_size={:#x}",
+                      name, patchable_section.size(), patched_size);
+            return std::nullopt;
+        }
 
         std::copy(pi_header.begin() + sizeof(NSOHeader), pi_header.end(), patchable_section.data());
     }
