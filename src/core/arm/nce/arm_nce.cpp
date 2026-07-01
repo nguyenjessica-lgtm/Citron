@@ -27,6 +27,28 @@ namespace {
 struct sigaction g_orig_bus_action;
 struct sigaction g_orig_segv_action;
 
+template <typename Callback>
+void InvokeOriginalActionWithMask(int sig, const struct sigaction& original, Callback&& callback) {
+    sigset_t callback_mask = original.sa_mask;
+    sigset_t previous_mask;
+
+    if ((original.sa_flags & SA_NODEFER) == 0) {
+        sigaddset(&callback_mask, sig);
+    }
+
+    sigprocmask(SIG_BLOCK, &callback_mask, &previous_mask);
+
+    if ((original.sa_flags & SA_NODEFER) != 0) {
+        sigset_t nodefer_mask;
+        sigemptyset(&nodefer_mask);
+        sigaddset(&nodefer_mask, sig);
+        sigprocmask(SIG_UNBLOCK, &nodefer_mask, nullptr);
+    }
+
+    callback();
+    sigprocmask(SIG_SETMASK, &previous_mask, nullptr);
+}
+
 void ForwardSignalToOriginalAction(int sig, siginfo_t* info, void* raw_context,
                                    const struct sigaction& original) {
     if (original.sa_handler == SIG_IGN) {
@@ -40,12 +62,13 @@ void ForwardSignalToOriginalAction(int sig, siginfo_t* info, void* raw_context,
     }
 
     if ((original.sa_flags & SA_SIGINFO) != 0 && original.sa_sigaction != nullptr) {
-        original.sa_sigaction(sig, info, raw_context);
+        InvokeOriginalActionWithMask(sig, original,
+                                     [&] { original.sa_sigaction(sig, info, raw_context); });
         return;
     }
 
     if ((original.sa_flags & SA_SIGINFO) == 0 && original.sa_handler != nullptr) {
-        original.sa_handler(sig);
+        InvokeOriginalActionWithMask(sig, original, [&] { original.sa_handler(sig); });
         return;
     }
 

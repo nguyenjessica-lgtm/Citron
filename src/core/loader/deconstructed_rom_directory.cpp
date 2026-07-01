@@ -200,6 +200,9 @@ AppLoader_DeconstructedRomDirectory::LoadResult AppLoader_DeconstructedRomDirect
     }
     metadata.Print();
 
+    const FileSys::PatchManager pm{metadata.GetTitleID(), system.GetFileSystemController(),
+                                   system.GetContentProvider()};
+
     // Enable NCE only for applications with 39-bit address space.
     const bool is_39bit =
         metadata.GetAddressSpaceType() == FileSys::ProgramAddressSpaceType::Is39Bit;
@@ -227,7 +230,7 @@ AppLoader_DeconstructedRomDirectory::LoadResult AppLoader_DeconstructedRomDirect
 
             const bool should_pass_arguments = std::strcmp(module, "rtld") == 0;
             const auto tentative_next_load_addr = AppLoader_NSO::LoadModule(
-                process, system, *module_file, next_code_size, should_pass_arguments, false, {},
+                process, system, *module_file, next_code_size, should_pass_arguments, false, pm,
                 patch_ctx.GetPatchers(), patch_ctx.GetLastIndex());
             if (!tentative_next_load_addr) {
                 return std::nullopt;
@@ -284,8 +287,6 @@ AppLoader_DeconstructedRomDirectory::LoadResult AppLoader_DeconstructedRomDirect
     modules.clear();
     const VAddr base_address{GetInteger(process.GetEntryPoint())};
     VAddr next_load_addr{base_address};
-    const FileSys::PatchManager pm{metadata.GetTitleID(), system.GetFileSystemController(),
-                                   system.GetContentProvider()};
     for (size_t i = 0; i < static_modules.size(); i++) {
         const auto& module = static_modules[i];
         const FileSys::VirtualFile module_file{dir->GetFile(module)};
