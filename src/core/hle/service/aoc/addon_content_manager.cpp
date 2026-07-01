@@ -105,16 +105,22 @@ IAddOnContentManager::~IAddOnContentManager() {
 }
 
 Result IAddOnContentManager::CountAddOnContent(Out<u32> out_count, ClientProcessId process_id) {
-    LOG_DEBUG(Service_AOC, "called. process_id={}", process_id.pid);
-    const auto current = FileSys::GetBaseTitleID(system.GetApplicationProcessProgramID());
+    LOG_DEBUG(Service_AOC, "CountAddOnContent called. process_id={}", process_id.pid);
+    const auto raw_program_id = system.GetApplicationProcessProgramID();
+    const auto current = FileSys::GetBaseTitleID(raw_program_id);
     const auto& disabled = Settings::values.disabled_addons[current];
+    const auto dlc_disabled = std::find(disabled.begin(), disabled.end(), "DLC") != disabled.end();
+    const auto matching_aocs = GetAOCTitleIDsForBase(add_on_content, current);
 
-    if (std::find(disabled.begin(), disabled.end(), "DLC") != disabled.end()) {
+    if (dlc_disabled) {
         *out_count = 0;
+        LOG_DEBUG(Service_AOC,
+                  "CountAddOnContent: raw_program_id={:016X}, base_id={:016X}, "
+                  "accumulated={}, matched={}, dlc_disabled=true",
+                  raw_program_id, current, add_on_content.size(), matching_aocs.size());
         R_SUCCEED();
     }
 
-    const auto matching_aocs = GetAOCTitleIDsForBase(add_on_content, current);
     u32 enabled_count = 0;
     for (const u64 aoc_tid : matching_aocs) {
         // Key matches what GetPatches emits: "DLC {:04d}" using GetAOCID (& 0x7FF)
@@ -124,6 +130,11 @@ Result IAddOnContentManager::CountAddOnContent(Out<u32> out_count, ClientProcess
         }
     }
     *out_count = enabled_count;
+    LOG_DEBUG(Service_AOC,
+              "CountAddOnContent: raw_program_id={:016X}, base_id={:016X}, accumulated={}, "
+              "matched={}, dlc_disabled=false, enabled={}",
+              raw_program_id, current, add_on_content.size(), matching_aocs.size(),
+              enabled_count);
     R_SUCCEED();
 }
 
@@ -169,16 +180,22 @@ Result IAddOnContentManager::ListAddOnContent(Out<u32> out_count,
 
 Result IAddOnContentManager::CountAddOnContentByApplicationId(Out<u32> out_count,
                                                               u64 application_id) {
-    LOG_DEBUG(Service_AOC, "called. application_id={:016X}", application_id);
+    LOG_DEBUG(Service_AOC, "CountAddOnContentByApplicationId called. application_id={:016X}",
+              application_id);
     const auto current = FileSys::GetBaseTitleID(application_id);
     const auto& disabled = Settings::values.disabled_addons[current];
+    const auto dlc_disabled = std::find(disabled.begin(), disabled.end(), "DLC") != disabled.end();
+    const auto matching_aocs = GetAOCTitleIDsForBase(add_on_content, current);
 
-    if (std::find(disabled.begin(), disabled.end(), "DLC") != disabled.end()) {
+    if (dlc_disabled) {
         *out_count = 0;
+        LOG_DEBUG(Service_AOC,
+                  "CountAddOnContentByApplicationId: application_id={:016X}, base_id={:016X}, "
+                  "accumulated={}, matched={}, dlc_disabled=true",
+                  application_id, current, add_on_content.size(), matching_aocs.size());
         R_SUCCEED();
     }
 
-    const auto matching_aocs = GetAOCTitleIDsForBase(add_on_content, current);
     u32 enabled_count = 0;
     for (const u64 aoc_tid : matching_aocs) {
         const auto item_key = fmt::format("DLC {:04d}", aoc_tid & FileSys::AOC_TITLE_ID_MASK);
@@ -187,6 +204,11 @@ Result IAddOnContentManager::CountAddOnContentByApplicationId(Out<u32> out_count
         }
     }
     *out_count = enabled_count;
+    LOG_DEBUG(Service_AOC,
+              "CountAddOnContentByApplicationId: application_id={:016X}, base_id={:016X}, "
+              "accumulated={}, matched={}, dlc_disabled=false, enabled={}",
+              application_id, current, add_on_content.size(), matching_aocs.size(),
+              enabled_count);
     R_SUCCEED();
 }
 

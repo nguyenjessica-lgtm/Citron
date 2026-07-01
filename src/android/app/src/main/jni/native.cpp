@@ -311,6 +311,7 @@ Core::SystemResultStatus EmulationSession::InitializeEmulation(const std::string
     jauto android_keyboard = std::make_unique<Common::Android::SoftwareKeyboard::AndroidKeyboard>();
     m_software_keyboard = android_keyboard.get();
     m_system.SetShuttingDown(false);
+    Settings::values.swkbd_applet_mode.SetValue(Settings::AppletMode::HLE);
     m_system.ApplySettings();
     Settings::LogSettings();
     m_system.HIDCore().ReloadInputDevices();
@@ -732,6 +733,14 @@ void Java_org_citron_citron_1emu_NativeLibrary_submitInlineKeyboardText(JNIEnv* 
                                                                     jstring j_text) {
     const std::u16string input = Common::UTF8ToUTF16(Common::Android::GetJString(env, j_text));
     EmulationSession::GetInstance().SoftwareKeyboard()->SubmitInlineKeyboardText(input);
+}
+
+void Java_org_citron_citron_1emu_NativeLibrary_replaceInlineKeyboardText(JNIEnv* env, jclass clazz,
+                                                                         jstring j_text,
+                                                                         jint j_cursor_position) {
+    const std::u16string input = Common::UTF8ToUTF16(Common::Android::GetJString(env, j_text));
+    EmulationSession::GetInstance().SoftwareKeyboard()->ReplaceInlineKeyboardText(
+        input, static_cast<s32>(j_cursor_position));
 }
 
 void Java_org_citron_citron_1emu_NativeLibrary_submitInlineKeyboardInput(JNIEnv* env, jclass clazz,

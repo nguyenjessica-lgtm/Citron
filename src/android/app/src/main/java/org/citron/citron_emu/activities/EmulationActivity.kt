@@ -155,6 +155,7 @@ class EmulationActivity : AppCompatActivity(), SensorEventListener {
                     this.findViewById(R.id.surface_input_overlay)
                 val im =
                     overlayView.context.getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
+                NativeLibrary.submitInlineKeyboardInput(keyCode)
                 im.hideSoftInputFromWindow(overlayView.windowToken, 0)
             } else {
                 val textChar = event.unicodeChar
