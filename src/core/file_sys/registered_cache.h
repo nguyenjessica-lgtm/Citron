@@ -222,8 +222,6 @@ private:
 };
 
 enum class ContentProviderUnionSlot {
-    Autoloader, ///< Separate functionality for multiple Updates/DLCs without being overwritten by
-                ///< NAND.
     SysNAND,        ///< System NAND
     UserNAND,       ///< User NAND
     SDMC,           ///< SD Card

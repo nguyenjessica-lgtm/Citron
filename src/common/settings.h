@@ -804,6 +804,13 @@ struct Values {
     std::map<u64, std::vector<std::string>> disabled_addons;
 
     std::vector<std::string> external_content_dirs;
+    // Tracks whether the default sdmc/citron/content directory has already been
+    // seeded into external_content_dirs once. Without this, a user who explicitly
+    // clears the list via Settings -> General -> Remove would have it silently
+    // re-added on every restart, since an empty vector is indistinguishable from
+    // a never-configured one.
+    Setting<bool> external_content_dirs_seeded{linkage, false, "external_content_dirs_seeded",
+                                               Category::Paths};
 
     // Cheats
     // Key: build_id (hex string), Value: set of disabled cheat names
