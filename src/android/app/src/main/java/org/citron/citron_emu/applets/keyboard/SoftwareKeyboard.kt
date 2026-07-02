@@ -25,6 +25,9 @@ object SoftwareKeyboard {
     lateinit var data: KeyboardData
     val dataLock = Object()
 
+    @Volatile
+    private var inlineConfig: KeyboardConfig? = null
+
     private fun executeNormalImpl(config: KeyboardConfig) {
         val activity = NativeLibrary.sEmulationActivity.get() ?: return
 
@@ -37,21 +40,38 @@ object SoftwareKeyboard {
     private fun executeInlineImpl(config: KeyboardConfig) {
         val activity = NativeLibrary.sEmulationActivity.get() ?: return
         val overlayView = activity.findViewById<View>(R.id.surface_input_overlay) ?: return
+        val previousVisibility = overlayView.visibility
+        val previousAlpha = overlayView.alpha
+
+        inlineConfig = config
 
         // Make sure the overlay can receive input
-        overlayView.requestFocus()
+        overlayView.visibility = View.VISIBLE
+        if (previousVisibility != View.VISIBLE) {
+            overlayView.alpha = 0f
+        }
+        overlayView.isFocusableInTouchMode = true
 
-        val imm = overlayView.context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+        overlayView.post {
+            overlayView.requestFocus()
 
-        // Restart input to ensure clean state
-        imm.restartInput(overlayView)
-        imm.showSoftInput(overlayView, InputMethodManager.SHOW_FORCED)
+            val imm =
+                overlayView.context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
 
-        // Poll every 500ms to detect when the keyboard is closed
-        startKeyboardDismissPolling(overlayView)
+            // Restart input to ensure clean state
+            imm.restartInput(overlayView)
+            imm.showSoftInput(overlayView, InputMethodManager.SHOW_FORCED)
+
+            // Poll every 500ms to detect when the keyboard is closed
+            startKeyboardDismissPolling(overlayView, previousVisibility, previousAlpha)
+        }
     }
 
-    private fun startKeyboardDismissPolling(overlayView: View) {
+    private fun startKeyboardDismissPolling(
+        overlayView: View,
+        previousVisibility: Int,
+        previousAlpha: Float
+    ) {
         val handler = Handler(Looper.myLooper()!!)
         val delayMs = 500L
 
@@ -65,10 +85,21 @@ object SoftwareKeyboard {
                     return
                 }
 
-                // Keyboard was dismissed → submit result
-                NativeLibrary.submitInlineKeyboardInput(KeyEvent.KEYCODE_ENTER)
+                // Keyboard was dismissed without a key event. Treat it as cancellation.
+                overlayView.visibility = previousVisibility
+                overlayView.alpha = previousAlpha
+                NativeLibrary.submitInlineKeyboardInput(KeyEvent.KEYCODE_BACK)
+                clearInlineConfig()
             }
         }, delayMs)
+    }
+
+    fun getInlineInitialText(): String = inlineConfig?.initial_text.orEmpty()
+
+    fun getInlineInitialCursorPosition(): Int = inlineConfig?.initial_cursor_position ?: 0
+
+    fun clearInlineConfig() {
+        inlineConfig = null
     }
 
     @JvmStatic
