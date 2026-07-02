@@ -4,6 +4,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <atomic>
+#include <cctype>
 #include <chrono>
 #include <climits>
 #include <cstdlib>
@@ -96,10 +97,22 @@ std::string FormatLogMessage(const Entry& entry) noexcept {
 } // namespace
 namespace {
 template <typename It>
+bool ComparePartialStringCaseInsensitive(It begin, It end, const char* other) noexcept {
+    for (; begin != end && *other != '\0'; ++begin, ++other) {
+        const auto lhs = static_cast<unsigned char>(*begin);
+        const auto rhs = static_cast<unsigned char>(*other);
+        if (std::tolower(lhs) != std::tolower(rhs)) {
+            return false;
+        }
+    }
+    return (begin == end) == (*other == '\0');
+}
+
+template <typename It>
 Level GetLevelByName(const It begin, const It end) noexcept {
     for (u32 i = 0; i < u32(Level::Count); ++i)
         if (auto const name = GetLevelName(Level(i));
-            Common::ComparePartialString(begin, end, name))
+            ComparePartialStringCaseInsensitive(begin, end, name))
             return Level(i);
     return Level::Count;
 }
@@ -107,7 +120,7 @@ template <typename It>
 Class GetClassByName(const It begin, const It end) noexcept {
     for (u32 i = 0; i < u32(Class::Count); ++i)
         if (auto const name = GetLogClassName(Class(i));
-            Common::ComparePartialString(begin, end, name))
+            ComparePartialStringCaseInsensitive(begin, end, name))
             return Class(i);
     return Class::Count;
 }
