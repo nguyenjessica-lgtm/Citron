@@ -48,8 +48,7 @@ void TranslatorVisitor::VOTE(u64 insn) {
 }
 
 void TranslatorVisitor::VOTE_vtg(u64 insn) {
-    // VTG uses a separate opcode encoding for the same VOTE operation.
-    Vote(*this, insn);
+    LOG_DEBUG(Shader, "(STUBBED) called with insn={:#X}", insn);
 }
 
 } // namespace Shader::Maxwell
