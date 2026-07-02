@@ -1003,10 +1003,11 @@ class SettingsFragmentPresenter(
 
             add(HeaderSetting(R.string.logging))
             add(
-                StringInputSetting(
+                LogFilterSetting(
                     StringSetting.LOG_FILTER,
                     titleId = R.string.log_filter,
-                    descriptionId = R.string.log_filter_description
+                    descriptionId = R.string.log_filter_description,
+                    customChoice = context.getString(R.string.log_filter_custom)
                 )
             )
         }
