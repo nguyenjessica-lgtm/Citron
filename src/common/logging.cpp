@@ -128,13 +128,13 @@ template <typename Iterator>
 bool ParseFilterRule(Filter& instance, Iterator begin, Iterator end) noexcept {
     auto level_separator = std::find(begin, end, ':');
     if (level_separator == end) {
-        LOG_ERROR(Log, "Invalid log filter. Must specify a log level after `:`: {}",
-                  std::string(begin, end));
+        LOG_WARNING(Log, "Invalid log filter. Must specify a log level after `:`: {}",
+                    std::string(begin, end));
         return false;
     }
     const Level level = GetLevelByName(level_separator + 1, end);
     if (level == Level::Count) {
-        LOG_ERROR(Log, "Unknown log level in filter: {}", std::string(begin, end));
+        LOG_WARNING(Log, "Unknown log level in filter: {}", std::string(begin, end));
         return false;
     }
     if (Common::ComparePartialString(begin, level_separator, "*")) {
@@ -143,7 +143,7 @@ bool ParseFilterRule(Filter& instance, Iterator begin, Iterator end) noexcept {
     }
     const Class log_class = GetClassByName(begin, level_separator);
     if (log_class == Class::Count) {
-        LOG_ERROR(Log, "Unknown log class in filter: {}", std::string(begin, end));
+        LOG_WARNING(Log, "Unknown log class in filter: {}", std::string(begin, end));
         return false;
     }
     instance.SetClassLevel(log_class, level);
@@ -170,6 +170,48 @@ void Filter::ParseFilterString(std::string_view filter_view) noexcept {
             ++end;
         it = end;
     }
+}
+
+std::string CanonicalizeFilterString(std::string_view filter_view) {
+    std::string canonicalized;
+    auto it = filter_view.cbegin();
+    while (it != filter_view.cend()) {
+        auto end = std::find(it, filter_view.cend(), ' ');
+        if (end != it) {
+            if (!canonicalized.empty()) {
+                canonicalized.push_back(' ');
+            }
+
+            auto level_separator = std::find(it, end, ':');
+            if (level_separator == end) {
+                canonicalized.append(it, end);
+            } else {
+                if (ComparePartialStringCaseInsensitive(it, level_separator, "*")) {
+                    canonicalized.push_back('*');
+                } else {
+                    const Class log_class = GetClassByName(it, level_separator);
+                    if (log_class == Class::Count) {
+                        canonicalized.append(it, level_separator);
+                    } else {
+                        canonicalized.append(GetLogClassName(log_class));
+                    }
+                }
+
+                canonicalized.push_back(':');
+
+                const Level level = GetLevelByName(level_separator + 1, end);
+                if (level == Level::Count) {
+                    canonicalized.append(level_separator + 1, end);
+                } else {
+                    canonicalized.append(GetLevelName(level));
+                }
+            }
+        }
+        if (end != filter_view.cend()) // Skip over the whitespace
+            ++end;
+        it = end;
+    }
+    return canonicalized;
 }
 
 namespace {
