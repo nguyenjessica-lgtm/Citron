@@ -208,12 +208,17 @@ jstring Java_org_citron_citron_1emu_utils_NativeConfig_getString(JNIEnv* env, jo
 
 void Java_org_citron_citron_1emu_utils_NativeConfig_setString(JNIEnv* env, jobject obj, jstring jkey,
                                                           jstring value) {
+    const auto key = Common::Android::GetJString(env, jkey);
     auto setting = getSetting<std::string>(env, jkey);
     if (setting == nullptr) {
         return;
     }
 
-    setting->SetValue(Common::Android::GetJString(env, value));
+    auto setting_value = Common::Android::GetJString(env, value);
+    if (key == Settings::values.log_filter.GetLabel()) {
+        setting_value = Common::Log::CanonicalizeFilterString(setting_value);
+    }
+    setting->SetValue(setting_value);
 }
 
 jboolean Java_org_citron_citron_1emu_utils_NativeConfig_getIsRuntimeModifiable(JNIEnv* env, jobject obj,
