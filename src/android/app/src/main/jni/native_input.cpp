@@ -1,6 +1,9 @@
 // SPDX-FileCopyrightText: 2024 yuzu Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <algorithm>
+#include <span>
+
 #include <common/fs/fs.h>
 #include <common/fs/path_util.h>
 #include <common/settings.h>
@@ -196,10 +199,48 @@ void Java_org_citron_citron_1emu_features_input_NativeInput_onGamePadButtonEvent
         Common::Android::GetJString(env, j_guid), j_port, j_button_id, j_action != 0);
 }
 
+void Java_org_citron_citron_1emu_features_input_NativeInput_onGamePadButtonEventByPort(
+    JNIEnv* env, jobject j_obj, jint j_port, jint j_button_id, jint j_action) {
+    EmulationSession::GetInstance().GetInputSubsystem().GetAndroid()->SetButtonState(
+        static_cast<size_t>(j_port), j_button_id, j_action != 0);
+}
+
 void Java_org_citron_citron_1emu_features_input_NativeInput_onGamePadAxisEvent(
     JNIEnv* env, jobject j_obj, jstring j_guid, jint j_port, jint j_stick_id, jfloat j_value) {
     EmulationSession::GetInstance().GetInputSubsystem().GetAndroid()->SetAxisPosition(
         Common::Android::GetJString(env, j_guid), j_port, j_stick_id, j_value);
+}
+
+void Java_org_citron_citron_1emu_features_input_NativeInput_onGamePadAxisEventByPort(
+    JNIEnv* env, jobject j_obj, jint j_port, jintArray j_axes, jfloatArray j_values,
+    jint j_count) {
+    if (j_axes == nullptr || j_values == nullptr || j_count <= 0) {
+        return;
+    }
+
+    const jsize axes_length = env->GetArrayLength(j_axes);
+    const jsize values_length = env->GetArrayLength(j_values);
+    if (axes_length <= 0 || values_length <= 0) {
+        return;
+    }
+
+    jboolean axes_is_copy{false};
+    jboolean values_is_copy{false};
+    jint* axes = env->GetIntArrayElements(j_axes, &axes_is_copy);
+    jfloat* values = env->GetFloatArrayElements(j_values, &values_is_copy);
+    if (axes != nullptr && values != nullptr) {
+        const size_t count =
+            static_cast<size_t>(std::min({axes_length, values_length, j_count}));
+        EmulationSession::GetInstance().GetInputSubsystem().GetAndroid()->SetAxisPositions(
+            static_cast<size_t>(j_port), std::span<const int>{axes, count},
+            std::span<const float>{values, count});
+    }
+    if (axes != nullptr) {
+        env->ReleaseIntArrayElements(j_axes, axes, JNI_ABORT);
+    }
+    if (values != nullptr) {
+        env->ReleaseFloatArrayElements(j_values, values, JNI_ABORT);
+    }
 }
 
 void Java_org_citron_citron_1emu_features_input_NativeInput_onGamePadMotionEvent(

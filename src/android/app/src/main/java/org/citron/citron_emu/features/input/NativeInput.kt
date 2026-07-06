@@ -55,6 +55,12 @@ object NativeInput {
     )
 
     /**
+     * Lower-overhead gameplay path for already registered Android controllers.
+     * Uses the stable controller port instead of sending the GUID string through JNI per event.
+     */
+    external fun onGamePadButtonEventByPort(port: Int, buttonId: Int, action: Int)
+
+    /**
      * Handles axis movement events.
      * @param guid 32 character hexadecimal string consisting of the controller's PID+VID.
      * @param port Port determined by controller connection order.
@@ -62,6 +68,17 @@ object NativeInput {
      * @param value Value along the given axis.
      */
     external fun onGamePadAxisEvent(guid: String, port: Int, axis: Int, value: Float)
+
+    /**
+     * Lower-overhead gameplay path for already registered Android controllers.
+     * Batches all changed axes from a MotionEvent into one JNI call.
+     */
+    external fun onGamePadAxisEventByPort(
+        port: Int,
+        axes: IntArray,
+        values: FloatArray,
+        count: Int
+    )
 
     /**
      * Handles motion events.

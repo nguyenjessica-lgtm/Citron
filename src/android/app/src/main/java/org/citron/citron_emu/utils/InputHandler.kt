@@ -13,8 +13,15 @@ import org.citron.citron_emu.features.input.CitronPhysicalDevice
 object InputHandler {
     var androidControllers = mapOf<Int, CitronPhysicalDevice>()
     var registeredControllers = mutableListOf<ParamPackage>()
+    private val controllerStates = mutableMapOf<Int, ControllerInputState>()
+    private var changedAxesScratch = IntArray(16)
+    private var changedValuesScratch = FloatArray(16)
 
     fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount > 0) {
+            return true
+        }
+
         val action = when (event.action) {
             KeyEvent.ACTION_DOWN -> NativeInput.ButtonState.PRESSED
             KeyEvent.ACTION_UP -> NativeInput.ButtonState.RELEASED
@@ -27,8 +34,15 @@ object InputHandler {
             controllerData = androidControllers[event.device.controllerNumber] ?: return false
         }
 
-        NativeInput.onGamePadButtonEvent(
-            controllerData.getGUID(),
+        val inputState = controllerStates.getOrPut(event.device.controllerNumber) {
+            ControllerInputState()
+        }
+        if (inputState.getButtonState(event.keyCode) == action) {
+            return true
+        }
+        inputState.setButtonState(event.keyCode, action)
+
+        NativeInput.onGamePadButtonEventByPort(
             controllerData.getPort(),
             event.keyCode,
             action
@@ -39,15 +53,44 @@ object InputHandler {
     fun dispatchGenericMotionEvent(event: MotionEvent): Boolean {
         val controllerData =
             androidControllers[event.device.controllerNumber] ?: return false
-        event.device.motionRanges.forEach {
-            NativeInput.onGamePadAxisEvent(
-                controllerData.getGUID(),
+        val axes = controllerData.getAxesForSource(event.source)
+        if (axes.isEmpty()) {
+            return true
+        }
+
+        val inputState = controllerStates.getOrPut(event.device.controllerNumber) {
+            ControllerInputState()
+        }
+        ensureAxisScratchCapacity(axes.size)
+        var changedCount = 0
+
+        axes.forEach { axis ->
+            val value = event.getAxisValue(axis)
+            if (inputState.setAxisValueIfChanged(axis, value)) {
+                changedAxesScratch[changedCount] = axis
+                changedValuesScratch[changedCount] = value
+                changedCount++
+            }
+        }
+
+        if (changedCount > 0) {
+            NativeInput.onGamePadAxisEventByPort(
                 controllerData.getPort(),
-                it.axis,
-                event.getAxisValue(it.axis)
+                changedAxesScratch,
+                changedValuesScratch,
+                changedCount
             )
         }
         return true
+    }
+
+    private fun ensureAxisScratchCapacity(size: Int) {
+        if (changedAxesScratch.size >= size) {
+            return
+        }
+
+        changedAxesScratch = IntArray(size)
+        changedValuesScratch = FloatArray(size)
     }
 
     fun getDevices(): Map<Int, CitronPhysicalDevice> {
@@ -76,6 +119,7 @@ object InputHandler {
     }
 
     fun updateControllerData() {
+        controllerStates.clear()
         androidControllers = getDevices()
         androidControllers.forEach {
             NativeInput.registerController(it.value)
@@ -91,4 +135,64 @@ object InputHandler {
     }
 
     fun InputDevice.getGUID(): String = String.format("%016x%016x", productId, vendorId)
+
+    private class ControllerInputState {
+        private var buttonStates = IntArray(256) { UNKNOWN_BUTTON_STATE }
+        private var axisValues = FloatArray(64)
+        private var axisSeen = BooleanArray(64)
+
+        fun getButtonState(button: Int): Int {
+            if (button < 0 || button >= buttonStates.size) {
+                return UNKNOWN_BUTTON_STATE
+            }
+            return buttonStates[button]
+        }
+
+        fun setButtonState(button: Int, state: Int) {
+            if (button < 0) {
+                return
+            }
+            ensureButtonCapacity(button)
+            buttonStates[button] = state
+        }
+
+        fun setAxisValueIfChanged(axis: Int, value: Float): Boolean {
+            if (axis < 0) {
+                return false
+            }
+            ensureAxisCapacity(axis)
+
+            if (axisSeen[axis] && axisValues[axis].toRawBits() == value.toRawBits()) {
+                return false
+            }
+
+            axisSeen[axis] = true
+            axisValues[axis] = value
+            return true
+        }
+
+        private fun ensureButtonCapacity(button: Int) {
+            if (button < buttonStates.size) {
+                return
+            }
+
+            buttonStates = buttonStates.copyOf(button + 1).also {
+                it.fill(UNKNOWN_BUTTON_STATE, buttonStates.size, it.size)
+            }
+        }
+
+        private fun ensureAxisCapacity(axis: Int) {
+            if (axis < axisValues.size) {
+                return
+            }
+
+            val newSize = axis + 1
+            axisValues = axisValues.copyOf(newSize)
+            axisSeen = axisSeen.copyOf(newSize)
+        }
+
+        companion object {
+            private const val UNKNOWN_BUTTON_STATE = -1
+        }
+    }
 }

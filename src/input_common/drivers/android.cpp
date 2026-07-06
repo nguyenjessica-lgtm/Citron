@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Copyright 2024 yuzu Emulator Project
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+#include <algorithm>
 #include <set>
 #include <common/settings_input.h>
 #include <common/thread.h>
@@ -32,6 +33,7 @@ void Android::RegisterController(jobject j_input_device) {
     const s32 port = env->CallIntMethod(j_input_device, Common::Android::GetCitronDeviceGetPort());
     const auto identifier = GetIdentifier(guid, static_cast<size_t>(port));
     PreSetController(identifier);
+    port_identifiers[static_cast<size_t>(port)] = identifier;
 
     if (input_devices.find(identifier) != input_devices.end()) {
         env->DeleteGlobalRef(input_devices[identifier]);
@@ -45,9 +47,30 @@ void Android::SetButtonState(std::string guid, size_t port, int button_id, bool 
     SetButton(identifier, button_id, value);
 }
 
+void Android::SetButtonState(size_t port, int button_id, bool value) {
+    const auto identifier = port_identifiers.find(port);
+    if (identifier == port_identifiers.end()) {
+        return;
+    }
+    SetButton(identifier->second, button_id, value);
+}
+
 void Android::SetAxisPosition(std::string guid, size_t port, int axis_id, float value) {
     const auto identifier = GetIdentifier(guid, port);
     SetAxis(identifier, axis_id, value);
+}
+
+void Android::SetAxisPositions(size_t port, std::span<const int> axis_ids,
+                               std::span<const float> values) {
+    const auto identifier = port_identifiers.find(port);
+    if (identifier == port_identifiers.end()) {
+        return;
+    }
+
+    const size_t count = std::min(axis_ids.size(), values.size());
+    for (size_t i = 0; i < count; ++i) {
+        SetAxis(identifier->second, axis_ids[i], values[i]);
+    }
 }
 
 void Android::SetMotionState(std::string guid, size_t port, u64 delta_timestamp, float gyro_x,
