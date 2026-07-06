@@ -75,10 +75,10 @@ void RecordAndroidInputTiming(const char* path, AndroidInputTimingStats& stats,
     const double max_us = static_cast<double>(stats.max_ns) / 1000.0;
     const double last_us = static_cast<double>(elapsed_ns) / 1000.0;
     const double avg_units = static_cast<double>(stats.total_units) / stats.samples;
-    LOG_DEBUG(Input,
-              "[Android Input Timing] {} samples={} avg={:.2f}us min={:.2f}us max={:.2f}us "
-              "last={:.2f}us avg_units={:.2f}",
-              path, stats.samples, avg_us, min_us, max_us, last_us, avg_units);
+    LOG_WARNING(Input,
+                "[Android Input Timing] {} samples={} avg={:.2f}us min={:.2f}us max={:.2f}us "
+                "last={:.2f}us avg_units={:.2f}",
+                path, stats.samples, avg_us, min_us, max_us, last_us, avg_units);
 }
 
 size_t SetAndroidAxesByPort(JNIEnv* env, jint j_port, jintArray j_axes, jfloatArray j_values,
