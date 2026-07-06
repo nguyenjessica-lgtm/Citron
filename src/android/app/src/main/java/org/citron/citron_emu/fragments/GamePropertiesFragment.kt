@@ -358,8 +358,8 @@ class GamePropertiesFragment : Fragment() {
             if (smallLayout) {
                 binding.listAll.updateMargins(left = leftInsets, right = rightInsets)
             } else {
-                if (ViewCompat.getLayoutDirection(binding.root) ==
-                    ViewCompat.LAYOUT_DIRECTION_LTR
+                if (binding.root.layoutDirection ==
+                    View.LAYOUT_DIRECTION_LTR
                 ) {
                     binding.listAll.updateMargins(right = rightInsets)
                     binding.iconLayout!!.updateMargins(top = barInsets.top, left = leftInsets)

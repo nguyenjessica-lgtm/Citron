@@ -143,6 +143,7 @@ class EmulationFragment : Fragment(), SurfaceHolder.Callback {
         driverViewModel.onLaunchGame()
 
         // So this fragment doesn't restart on configuration changes; i.e. rotation.
+        @Suppress("DEPRECATION")
         retainInstance = true
         emulationState = EmulationState(game.path) {
             return@EmulationState driverViewModel.isInteractionAllowed.value
@@ -1018,7 +1019,7 @@ class EmulationFragment : Fragment(), SurfaceHolder.Callback {
             val cutInsets: Insets = windowInsets.getInsets(WindowInsetsCompat.Type.displayCutout())
             var left = 0
             var right = 0
-            if (ViewCompat.getLayoutDirection(v) == ViewCompat.LAYOUT_DIRECTION_LTR) {
+            if (v.layoutDirection == View.LAYOUT_DIRECTION_LTR) {
                 left = cutInsets.left
             } else {
                 right = cutInsets.right

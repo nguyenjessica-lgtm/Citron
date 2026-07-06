@@ -23,6 +23,7 @@ import org.citron.citron_emu.applets.keyboard.ui.KeyboardDialogFragment
 object SoftwareKeyboard {
 
     lateinit var data: KeyboardData
+    @Suppress("PLATFORM_CLASS_MAPPED_TO_KOTLIN")
     val dataLock = Object()
 
     @Volatile
@@ -60,6 +61,7 @@ object SoftwareKeyboard {
 
             // Restart input to ensure clean state
             imm.restartInput(overlayView)
+            @Suppress("DEPRECATION")
             imm.showSoftInput(overlayView, InputMethodManager.SHOW_FORCED)
 
             // Poll every 500ms to detect when the keyboard is closed
