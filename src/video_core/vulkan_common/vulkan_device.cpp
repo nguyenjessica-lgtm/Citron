@@ -440,8 +440,19 @@ Device::Device(VkInstance instance_, vk::PhysicalDevice physical_, VkSurfaceKHR 
     const bool is_s8gen2 = device_id == 0x43050a01;
     const bool is_s8elite = device_id == 0x43052c01;
     const bool is_arm = driver_id == VK_DRIVER_ID_ARM_PROPRIETARY;
+    const bool is_mobile_driver = is_mvk || is_qualcomm || is_turnip || is_arm;
+    const bool is_missing_required_storage_feature =
+        !features.bit16_storage.storageBuffer16BitAccess ||
+        !features.bit16_storage.uniformAndStorageBuffer16BitAccess ||
+        !features.bit8_storage.storageBuffer8BitAccess ||
+        !features.bit8_storage.uniformAndStorageBuffer8BitAccess;
 
-    if ((is_mvk || is_qualcomm || is_turnip || is_arm) && !is_suitable) {
+    if (is_mobile_driver && !is_suitable) {
+        if (is_missing_required_storage_feature) {
+            LOG_WARNING(Render_Vulkan,
+                        "Mobile driver is missing required 8/16-bit storage buffer features; "
+                        "continuing may be unstable");
+        }
         LOG_WARNING(Render_Vulkan, "Unsuitable driver, continuing anyway");
     } else if (!is_suitable) {
         throw vk::Exception(VK_ERROR_INCOMPATIBLE_DRIVER);
