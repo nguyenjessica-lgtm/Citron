@@ -120,6 +120,7 @@ object InputHandler {
 
     fun updateControllerData() {
         controllerStates.clear()
+        NativeInput.clearRegisteredControllers()
         androidControllers = getDevices()
         androidControllers.forEach {
             NativeInput.registerController(it.value)

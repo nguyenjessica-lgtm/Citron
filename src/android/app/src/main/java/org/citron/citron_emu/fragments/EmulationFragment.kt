@@ -14,7 +14,6 @@ import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.net.Uri
 import android.os.BatteryManager
-import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -764,60 +763,11 @@ class EmulationFragment : Fragment(), SurfaceHolder.Callback {
 
     override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
         Log.debug("[EmulationFragment] Surface changed. Resolution: " + width + "x" + height)
-        requestLowLatencyDisplayMode(holder.surface)
         emulationState.newSurface(holder.surface)
     }
 
     override fun surfaceDestroyed(holder: SurfaceHolder) {
         emulationState.clearSurface()
-    }
-
-    private fun requestLowLatencyDisplayMode(surface: Surface) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
-            return
-        }
-
-        val display = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            requireActivity().display
-        } else {
-            @Suppress("DEPRECATION")
-            requireActivity().windowManager.defaultDisplay
-        } ?: return
-
-        val currentMode = display.mode ?: return
-        val highestMode = display.supportedModes
-            .filter {
-                it.physicalWidth == currentMode.physicalWidth &&
-                    it.physicalHeight == currentMode.physicalHeight
-            }
-            .maxByOrNull { it.refreshRate }
-            ?: display.supportedModes.maxByOrNull { it.refreshRate }
-            ?: return
-
-        val window = requireActivity().window
-        if (window.attributes.preferredDisplayModeId != highestMode.modeId) {
-            val attributes = window.attributes
-            attributes.preferredDisplayModeId = highestMode.modeId
-            window.attributes = attributes
-            Log.debug(
-                "[EmulationFragment] Requested display mode: " +
-                    "${highestMode.physicalWidth}x${highestMode.physicalHeight} " +
-                    "@ ${highestMode.refreshRate}Hz"
-            )
-        }
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            surface.setFrameRate(
-                highestMode.refreshRate,
-                Surface.FRAME_RATE_COMPATIBILITY_DEFAULT,
-                Surface.CHANGE_FRAME_RATE_ONLY_IF_SEAMLESS
-            )
-        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            surface.setFrameRate(
-                highestMode.refreshRate,
-                Surface.FRAME_RATE_COMPATIBILITY_DEFAULT
-            )
-        }
     }
 
     private fun showOverlayOptions() {

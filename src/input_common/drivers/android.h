@@ -3,8 +3,9 @@
 
 #pragma once
 
-#include <span>
+#include <mutex>
 #include <set>
+#include <span>
 #include <common/threadsafe_queue.h>
 #include <jni.h>
 #include "input_common/input_engine.h"
@@ -25,6 +26,11 @@ public:
      * @param j_input_device CitronInputDevice object from the Android frontend to register.
      */
     void RegisterController(jobject j_input_device);
+
+    /**
+     * Clears all registered Android controllers and cached port identifiers.
+     */
+    void ClearControllers();
 
     /**
      * Sets the status of a button on a specific controller.
@@ -101,6 +107,7 @@ public:
 private:
     std::unordered_map<PadIdentifier, jobject> input_devices;
     std::unordered_map<size_t, PadIdentifier> port_identifiers;
+    mutable std::mutex input_devices_mutex;
 
     /// Returns the correct identifier corresponding to the player index
     PadIdentifier GetIdentifier(const std::string& guid, size_t port) const;

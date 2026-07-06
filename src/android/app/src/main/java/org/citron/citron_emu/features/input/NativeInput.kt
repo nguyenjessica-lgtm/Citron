@@ -199,6 +199,11 @@ object NativeInput {
     external fun registerController(device: CitronInputDevice)
 
     /**
+     * Clears all controllers registered with the Android input driver before re-enumerating devices.
+     */
+    external fun clearRegisteredControllers()
+
+    /**
      * Gets the names of input devices that have been registered with the input subsystem via [registerController]
      */
     external fun getInputDevices(): Array<String>

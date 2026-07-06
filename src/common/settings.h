@@ -292,13 +292,7 @@ struct Values {
                                                             "accelerate_astc",
                                                             Category::Renderer};
     SwitchableSetting<VSyncMode, true> vsync_mode{
-        linkage,
-#ifdef ANDROID
-        VSyncMode::Mailbox,
-#else
-        VSyncMode::Fifo,
-#endif
-        VSyncMode::Immediate, VSyncMode::FifoRelaxed,
+        linkage,     VSyncMode::Fifo,    VSyncMode::Immediate,        VSyncMode::FifoRelaxed,
         "use_vsync", Category::Renderer, Specialization::RuntimeList, true,
         true};
     SwitchableSetting<NvdecEmulation> nvdec_emulation{linkage, NvdecEmulation::Gpu,

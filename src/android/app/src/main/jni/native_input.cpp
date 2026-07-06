@@ -201,6 +201,10 @@ void Java_org_citron_citron_1emu_features_input_NativeInput_onGamePadButtonEvent
 
 void Java_org_citron_citron_1emu_features_input_NativeInput_onGamePadButtonEventByPort(
     JNIEnv* env, jobject j_obj, jint j_port, jint j_button_id, jint j_action) {
+    if (j_port < 0) {
+        return;
+    }
+
     EmulationSession::GetInstance().GetInputSubsystem().GetAndroid()->SetButtonState(
         static_cast<size_t>(j_port), j_button_id, j_action != 0);
 }
@@ -214,7 +218,7 @@ void Java_org_citron_citron_1emu_features_input_NativeInput_onGamePadAxisEvent(
 void Java_org_citron_citron_1emu_features_input_NativeInput_onGamePadAxisEventByPort(
     JNIEnv* env, jobject j_obj, jint j_port, jintArray j_axes, jfloatArray j_values,
     jint j_count) {
-    if (j_axes == nullptr || j_values == nullptr || j_count <= 0) {
+    if (j_port < 0 || j_axes == nullptr || j_values == nullptr || j_count <= 0) {
         return;
     }
 
@@ -327,6 +331,11 @@ void Java_org_citron_citron_1emu_features_input_NativeInput_registerController(J
                                                                            jobject j_obj,
                                                                            jobject j_device) {
     EmulationSession::GetInstance().GetInputSubsystem().GetAndroid()->RegisterController(j_device);
+}
+
+void Java_org_citron_citron_1emu_features_input_NativeInput_clearRegisteredControllers(
+    JNIEnv* env, jobject j_obj) {
+    EmulationSession::GetInstance().GetInputSubsystem().GetAndroid()->ClearControllers();
 }
 
 jobjectArray Java_org_citron_citron_1emu_features_input_NativeInput_getInputDevices(JNIEnv* env,
