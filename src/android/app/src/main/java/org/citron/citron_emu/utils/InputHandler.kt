@@ -63,14 +63,20 @@ object InputHandler {
 
     fun dispatchGenericMotionEvent(event: MotionEvent): Boolean {
         val dispatchStartNs = inputTimingStartNs()
-        val controllerData =
-            androidControllers[event.device.controllerNumber] ?: return false
+        val device = event.device ?: return false
+        val controllerNumber = device.controllerNumber
+        var controllerData = androidControllers[controllerNumber]
+        if (controllerData == null) {
+            updateControllerData()
+            controllerData = androidControllers[controllerNumber] ?: return false
+        }
+
         val axes = controllerData.getAxesForSource(event.source)
         if (axes.isEmpty()) {
             return true
         }
 
-        val inputState = controllerStates.getOrPut(event.device.controllerNumber) {
+        val inputState = controllerStates.getOrPut(controllerNumber) {
             ControllerInputState()
         }
         ensureAxisScratchCapacity(axes.size)
