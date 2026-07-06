@@ -65,7 +65,7 @@ option(CITRON_USE_EXTERNAL_VULKAN_HEADERS "Use Vulkan-Headers from externals" ON
 
 option(CITRON_USE_EXTERNAL_VULKAN_UTILITY_LIBRARIES "Use Vulkan-Utility-Libraries from externals" ON)
 
-option(CITRON_USE_LLVM_DEMANGLE "Search for and link against a system LLVM for C++ symbol demangling" ON)
+option(CITRON_USE_LLVM_DEMANGLE "Search for and link against a system LLVM for C++ symbol demangling" OFF)
 
 option(CITRON_USE_QT_MULTIMEDIA "Use QtMultimedia for Camera" OFF)
 
