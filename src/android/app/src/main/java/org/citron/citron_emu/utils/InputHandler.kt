@@ -6,9 +6,10 @@ package org.citron.citron_emu.utils
 import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
-import org.citron.citron_emu.features.input.NativeInput
+import org.citron.citron_emu.BuildConfig
 import org.citron.citron_emu.features.input.CitronInputOverlayDevice
 import org.citron.citron_emu.features.input.CitronPhysicalDevice
+import org.citron.citron_emu.features.input.NativeInput
 
 object InputHandler {
     var androidControllers = mapOf<Int, CitronPhysicalDevice>()
@@ -18,6 +19,7 @@ object InputHandler {
     private var changedValuesScratch = FloatArray(16)
 
     fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        val dispatchStartNs = inputTimingStartNs()
         if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount > 0) {
             return true
         }
@@ -42,15 +44,25 @@ object InputHandler {
         }
         inputState.setButtonState(event.keyCode, action)
 
-        NativeInput.onGamePadButtonEventByPort(
-            controllerData.getPort(),
-            event.keyCode,
-            action
-        )
+        if (BuildConfig.DEBUG) {
+            NativeInput.onGamePadButtonEventByPortTimed(
+                controllerData.getPort(),
+                event.keyCode,
+                action,
+                dispatchStartNs
+            )
+        } else {
+            NativeInput.onGamePadButtonEventByPort(
+                controllerData.getPort(),
+                event.keyCode,
+                action
+            )
+        }
         return true
     }
 
     fun dispatchGenericMotionEvent(event: MotionEvent): Boolean {
+        val dispatchStartNs = inputTimingStartNs()
         val controllerData =
             androidControllers[event.device.controllerNumber] ?: return false
         val axes = controllerData.getAxesForSource(event.source)
@@ -74,15 +86,32 @@ object InputHandler {
         }
 
         if (changedCount > 0) {
-            NativeInput.onGamePadAxisEventByPort(
-                controllerData.getPort(),
-                changedAxesScratch,
-                changedValuesScratch,
-                changedCount
-            )
+            if (BuildConfig.DEBUG) {
+                NativeInput.onGamePadAxisEventByPortTimed(
+                    controllerData.getPort(),
+                    changedAxesScratch,
+                    changedValuesScratch,
+                    changedCount,
+                    dispatchStartNs
+                )
+            } else {
+                NativeInput.onGamePadAxisEventByPort(
+                    controllerData.getPort(),
+                    changedAxesScratch,
+                    changedValuesScratch,
+                    changedCount
+                )
+            }
         }
         return true
     }
+
+    private fun inputTimingStartNs(): Long =
+        if (BuildConfig.DEBUG) {
+            System.nanoTime()
+        } else {
+            0L
+        }
 
     private fun ensureAxisScratchCapacity(size: Int) {
         if (changedAxesScratch.size >= size) {

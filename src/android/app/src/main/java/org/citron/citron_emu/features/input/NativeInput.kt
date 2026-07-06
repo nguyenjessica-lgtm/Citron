@@ -61,6 +61,16 @@ object NativeInput {
     external fun onGamePadButtonEventByPort(port: Int, buttonId: Int, action: Int)
 
     /**
+     * Debug-only timed variant used to measure Kotlin dispatch to native input driver overhead.
+     */
+    external fun onGamePadButtonEventByPortTimed(
+        port: Int,
+        buttonId: Int,
+        action: Int,
+        dispatchStartNs: Long
+    )
+
+    /**
      * Handles axis movement events.
      * @param guid 32 character hexadecimal string consisting of the controller's PID+VID.
      * @param port Port determined by controller connection order.
@@ -78,6 +88,17 @@ object NativeInput {
         axes: IntArray,
         values: FloatArray,
         count: Int
+    )
+
+    /**
+     * Debug-only timed variant used to measure Kotlin dispatch to native input driver overhead.
+     */
+    external fun onGamePadAxisEventByPortTimed(
+        port: Int,
+        axes: IntArray,
+        values: FloatArray,
+        count: Int,
+        dispatchStartNs: Long
     )
 
     /**
