@@ -344,10 +344,14 @@ class MainActivity : AppCompatActivity(), ThemeProvider {
         )
 
         val dstPath = DirectoryInitialization.userDirectory + "/keys/"
+        val dstFilename = when (FileUtil.getFilename(result).lowercase()) {
+            "title.keys" -> "title.keys"
+            else -> "prod.keys"
+        }
         if (FileUtil.copyUriToInternalStorage(
                 result,
                 dstPath,
-                "prod.keys"
+                dstFilename
             ) != null
         ) {
             if (NativeLibrary.reloadKeys()) {

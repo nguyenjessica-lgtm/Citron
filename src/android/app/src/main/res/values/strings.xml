@@ -44,8 +44,8 @@
     <string name="home_search_games">Search games</string>
     <string name="search_settings">Search settings</string>
     <string name="games_dir_selected">Games directory selected</string>
-    <string name="install_prod_keys">Install prod.keys</string>
-    <string name="install_prod_keys_description">Required to decrypt retail games</string>
+    <string name="install_prod_keys">Install prod/title keys</string>
+    <string name="install_prod_keys_description">Required to decrypt retail games and installed content</string>
     <string name="install_prod_keys_warning">Skip adding keys?</string>
     <string name="install_prod_keys_warning_description">Valid keys are required to emulate retail games. Only homebrew apps will function if you continue.</string>
     <string name="install_prod_keys_warning_help">https://discord.gg/axqZFEyzPQ</string>
