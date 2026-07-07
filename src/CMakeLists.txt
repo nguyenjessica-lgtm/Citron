@@ -225,8 +225,23 @@ add_subdirectory(input_common)
 add_subdirectory(frontend_common)
 add_subdirectory(shader_recompiler)
 
+function(add_subdirectory_without_clangcl_pgo subdir)
+    if (CITRON_CLANGCL)
+        foreach(config DEBUG RELEASE RELWITHDEBINFO MINSIZEREL)
+            foreach(variable
+                    CMAKE_C_FLAGS_${config}
+                    CMAKE_CXX_FLAGS_${config}
+                    CMAKE_EXE_LINKER_FLAGS_${config})
+                string(REGEX REPLACE "(^| )/clang:-fprofile(-instr)?-use(=\"[^\"]+\"|=[^ ]+)" "" ${variable} "${${variable}}")
+            endforeach()
+        endforeach()
+    endif()
+
+    add_subdirectory(${subdir})
+endfunction()
+
 if (CITRON_ROOM)
-     add_subdirectory(dedicated_room)
+     add_subdirectory_without_clangcl_pgo(dedicated_room)
 endif()
 
 if (CITRON_TESTS)
@@ -239,7 +254,7 @@ if (CITRON_SHADER_TOOL)
 endif()
 
 if (ENABLE_SDL2)
-    add_subdirectory(citron_cmd)
+    add_subdirectory_without_clangcl_pgo(citron_cmd)
 endif()
 
 if (ENABLE_QT)

@@ -671,7 +671,7 @@ stage_setup_clangcl() {
     pacman -S --needed --noconfirm base-devel git curl wget \
         mingw-w64-clang-x86_64-nasm mingw-w64-clang-x86_64-yasm \
         mingw-w64-clang-x86_64-glslang mingw-w64-clang-x86_64-ninja \
-        mingw-w64-clang-x86_64-sccache \
+        mingw-w64-clang-x86_64-sccache mingw-w64-clang-x86_64-jom \
         2>/dev/null || error "Failed to install required MSYS2 packages."
 
     local winget
@@ -713,7 +713,6 @@ stage_setup_clangcl() {
     fi
     [[ -x "/c/Program Files/CMake/bin/cmake.exe" ]] || winget_install Kitware.CMake
     [[ -x "/c/Program Files/Git/cmd/git.exe" ]] || winget_install Git.Git
-
     local vswhere="/c/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe"
     [[ -x "${vswhere}" ]] ||
         error "Visual Studio Installer/vswhere missing. Install Visual Studio 2022 first."
@@ -733,7 +732,7 @@ stage_setup_clangcl() {
         "/c/Strawberry/perl/bin/perl.exe" "${setup_python}" \
         "/c/Program Files/CMake/bin/cmake.exe" "/c/Program Files/Git/cmd/git.exe" \
         "/clang64/bin/nasm.exe" "/clang64/bin/ninja.exe" \
-        "/clang64/bin/sccache.exe"; do
+        "/clang64/bin/sccache.exe" "/clang64/bin/jom.exe"; do
         if [[ -x "${tool}" ]]; then
             success "  ${tool}"
         else

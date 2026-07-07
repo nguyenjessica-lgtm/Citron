@@ -23,9 +23,12 @@ function(citron_build_clangcl_ffmpeg)
     set(_source_dir "${FFMPEG_CPM_SOURCE_DIR}")
     set(_build_dir "${PROJECT_BINARY_DIR}/externals/ffmpeg-clangcl-build")
     set(_install_dir "${PROJECT_BINARY_DIR}/externals/ffmpeg-clangcl-install")
+    get_filename_component(_clangcl_tool_dir "${CMAKE_C_COMPILER}" DIRECTORY)
+    get_filename_component(_linker_tool_dir "${CMAKE_LINKER}" DIRECTORY)
+    get_filename_component(_ar_tool_dir "${CMAKE_AR}" DIRECTORY)
     execute_process(
         COMMAND "${CMAKE_COMMAND}" -E env "MSYS2_ARG_CONV_EXCL=*"
-            "${BASH_PROGRAM}" -lc "cygpath -am '${_source_dir}' && cygpath -am '${_build_dir}' && cygpath -am '${_install_dir}'"
+            "${BASH_PROGRAM}" -lc "cygpath -am '${_source_dir}' && cygpath -am '${_build_dir}' && cygpath -am '${_install_dir}' && cygpath -au '${_clangcl_tool_dir}' && cygpath -au '${_linker_tool_dir}' && cygpath -au '${_ar_tool_dir}'"
         OUTPUT_VARIABLE _clangcl_ffmpeg_paths
         OUTPUT_STRIP_TRAILING_WHITESPACE
         COMMAND_ERROR_IS_FATAL ANY
@@ -34,16 +37,20 @@ function(citron_build_clangcl_ffmpeg)
     list(GET _clangcl_ffmpeg_paths 0 _source_dir_win)
     list(GET _clangcl_ffmpeg_paths 1 _build_dir_win)
     list(GET _clangcl_ffmpeg_paths 2 _install_dir_win)
+    list(GET _clangcl_ffmpeg_paths 3 _clangcl_tool_dir_msys)
+    list(GET _clangcl_ffmpeg_paths 4 _linker_tool_dir_msys)
+    list(GET _clangcl_ffmpeg_paths 5 _ar_tool_dir_msys)
     set(_build_stamp "${_install_dir}/.built")
     file(MAKE_DIRECTORY "${_build_dir}" "${_install_dir}")
     set(_ffmpeg_configure_command
+        "export PATH='${_clangcl_tool_dir_msys}:${_linker_tool_dir_msys}:${_ar_tool_dir_msys}':$PATH &&"
         "'${_source_dir_win}/configure'"
         "--toolchain=msvc"
         "--cc=clang-cl"
         "--cxx=clang-cl"
         "--ld=lld-link"
-        "--ar=lib"
-        "--nm=dumpbin"
+        "--ar=llvm-ar"
+        "--nm=llvm-nm"
         "--prefix='${_install_dir_win}'"
         "--enable-static"
         "--disable-shared"
@@ -85,7 +92,7 @@ function(citron_build_clangcl_ffmpeg)
         COMMAND "${CMAKE_COMMAND}" -E env "MSYS2_ARG_CONV_EXCL=*"
             "${BASH_PROGRAM}" -lc "${_ffmpeg_configure_command}"
         COMMAND "${CMAKE_COMMAND}" -E env "MSYS2_ARG_CONV_EXCL=*"
-            "${BASH_PROGRAM}" -lc "perl -0pi -e 's{(?<![A-Za-z0-9_])/([A-Za-z])/}{uc($1).q{:/}}ge' '${_build_dir_win}/ffbuild/config.mak' '${_build_dir_win}/ffbuild/config.sh'"
+            "${BASH_PROGRAM}" -lc "perl -0pi -e 's{(?<![A-Za-z0-9_])/([A-Za-z])/}{uc($1).q{:/}}ge; s{^(AR|AR_CMD)=llvm-lib}{$1=llvm-ar}mg' '${_build_dir_win}/ffbuild/config.mak' '${_build_dir_win}/ffbuild/config.sh'"
         COMMAND "${CMAKE_COMMAND}" -E env "MSYS2_ARG_CONV_EXCL=*"
             "${MAKE_PROGRAM}" -j${_ffmpeg_jobs}
         COMMAND "${CMAKE_COMMAND}" -E env "MSYS2_ARG_CONV_EXCL=*"

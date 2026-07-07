@@ -72,8 +72,12 @@ if (WIN32 AND MSVC AND CMAKE_C_COMPILER_ID MATCHES "Clang")
     set(_OPENSSL_AR "llvm-lib")
     set(_OPENSSL_RANLIB "")
     set(_OPENSSL_RC "rc")
-    set(_OPENSSL_BUILD_TOOL nmake)
-    set(_OPENSSL_PARALLEL_ARGS "")
+    find_program(_OPENSSL_JOM jom)
+    if (_OPENSSL_JOM)
+        set(_OPENSSL_BUILD_TOOL "${_OPENSSL_JOM}")
+    else()
+        set(_OPENSSL_BUILD_TOOL nmake)
+    endif()
     set(_OPENSSL_SSL_NAME "libssl.lib")
     set(_OPENSSL_CRYPTO_NAME "libcrypto.lib")
 elseif (CMAKE_CROSSCOMPILING AND CMAKE_C_COMPILER MATCHES "x86_64-w64-mingw32")
@@ -318,8 +322,14 @@ ProcessorCount(_NPROC)
 if (_NPROC EQUAL 0)
     set(_NPROC 4)
 endif()
-if (_OPENSSL_BUILD_TOOL STREQUAL "make")
+if (_OPENSSL_BUILD_TOOL MATCHES "(^|[/\\\\])(make|jom)(\\.exe)?$")
     set(_OPENSSL_PARALLEL_ARGS "-j${_NPROC}")
+else()
+    set(_OPENSSL_PARALLEL_ARGS "")
+endif()
+set(_OPENSSL_INSTALL_TOOL "${_OPENSSL_BUILD_TOOL}")
+if (_OPENSSL_BUILD_TOOL MATCHES "(^|[/\\\\])jom(\\.exe)?$")
+    set(_OPENSSL_INSTALL_TOOL nmake)
 endif()
 
 execute_process(
@@ -335,14 +345,14 @@ if (NOT _ssl_build_result EQUAL 0)
 endif()
 
 # VC install expects this file even when clang-cl does not emit it.
-if (_OPENSSL_BUILD_TOOL STREQUAL "nmake" AND
+if (_OPENSSL_INSTALL_TOOL STREQUAL "nmake" AND
     NOT EXISTS "${_OPENSSL_BUILD_DIR}/ossl_static.pdb")
     file(TOUCH "${_OPENSSL_BUILD_DIR}/ossl_static.pdb")
 endif()
 
 execute_process(
     COMMAND ${CMAKE_COMMAND} -E env "PATH=${_openssl_env_path}"
-        ${_OPENSSL_BUILD_TOOL} install_sw
+        ${_OPENSSL_INSTALL_TOOL} install_sw
     WORKING_DIRECTORY "${_OPENSSL_BUILD_DIR}"
     RESULT_VARIABLE _ssl_install_result
     OUTPUT_QUIET
