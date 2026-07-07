@@ -38,10 +38,9 @@ class AddonViewModel : ViewModel() {
 
     fun refreshAddons() {
         val currentGame = game ?: return
-        if (isRefreshing.get()) {
+        if (!isRefreshing.compareAndSet(false, true)) {
             return
         }
-        isRefreshing.set(true)
         viewModelScope.launch {
             try {
                 val patchList = withContext(Dispatchers.IO) {

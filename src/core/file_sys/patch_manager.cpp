@@ -119,14 +119,14 @@ std::optional<std::vector<Core::Memory::CheatEntry>> ReadCheatFileFromFolder(
     return parser.Parse(std::string_view(reinterpret_cast<const char*>(data.data()), data.size()));
 }
 
-std::string GetCheatBuildId(const PatchManager::BuildID& build_id) {
-    return Common::HexToString(build_id).substr(0, CHEAT_BUILD_ID_LENGTH);
-}
-
 std::string NormalizeCheatBuildId(std::string build_id) {
     std::transform(build_id.begin(), build_id.end(), build_id.begin(),
                    [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
     return build_id;
+}
+
+std::string GetCheatBuildId(const PatchManager::BuildID& build_id) {
+    return NormalizeCheatBuildId(Common::HexToString(build_id).substr(0, CHEAT_BUILD_ID_LENGTH));
 }
 
 std::string GetCheatName(const Core::Memory::CheatEntry& cheat) {
@@ -138,9 +138,18 @@ std::string GetCheatName(const Core::Memory::CheatEntry& cheat) {
 
 void ApplyDisabledCheats(std::vector<Core::Memory::CheatEntry>& cheats,
                          const std::string& build_id) {
-    const auto disabled_it = Settings::values.disabled_cheats.find(build_id);
+    const auto normalized_build_id = NormalizeCheatBuildId(build_id);
+    auto disabled_it = Settings::values.disabled_cheats.find(normalized_build_id);
     if (disabled_it == Settings::values.disabled_cheats.end()) {
-        return;
+        disabled_it = std::find_if(Settings::values.disabled_cheats.begin(),
+                                   Settings::values.disabled_cheats.end(),
+                                   [&normalized_build_id](const auto& entry) {
+                                       return NormalizeCheatBuildId(entry.first) ==
+                                              normalized_build_id;
+                                   });
+        if (disabled_it == Settings::values.disabled_cheats.end()) {
+            return;
+        }
     }
 
     const auto& disabled = disabled_it->second;

@@ -118,25 +118,27 @@ class DriverViewModel : ViewModel() {
 
     fun onCloseDriverManager(game: Game?) {
         _isDeletingDrivers.value = true
-        try {
-            updateDriverNameForGame(game)
-            if (game == null) {
-                NativeConfig.saveGlobalConfig()
-            } else {
-                NativeConfig.savePerGameConfig()
-                NativeConfig.unloadPerGameConfig()
-                NativeConfig.reloadGlobalConfig()
-            }
-
-            driversToDelete.forEach {
-                val driver = File(it)
-                if (driver.exists()) {
-                    driver.delete()
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                updateDriverNameForGame(game)
+                if (game == null) {
+                    NativeConfig.saveGlobalConfig()
+                } else {
+                    NativeConfig.savePerGameConfig()
+                    NativeConfig.unloadPerGameConfig()
+                    NativeConfig.reloadGlobalConfig()
                 }
+
+                driversToDelete.forEach {
+                    val driver = File(it)
+                    if (driver.exists()) {
+                        driver.delete()
+                    }
+                }
+                driversToDelete.clear()
+            } finally {
+                _isDeletingDrivers.value = false
             }
-            driversToDelete.clear()
-        } finally {
-            _isDeletingDrivers.value = false
         }
     }
 

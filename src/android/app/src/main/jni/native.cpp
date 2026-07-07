@@ -57,6 +57,7 @@
 #include "core/hle/service/am/frontend/applets.h"
 #include "core/hle/service/filesystem/filesystem.h"
 #include "core/loader/loader.h"
+#include "core/memory/cheat_engine.h"
 #include "frontend_common/config.h"
 #include "hid_core/frontend/emulated_controller.h"
 #include "hid_core/hid_core.h"
@@ -875,14 +876,19 @@ jobjectArray Java_org_citron_citron_1emu_NativeLibrary_getCheatsForFile(JNIEnv* 
         env->NewObjectArray(cheats.size(), Common::Android::GetPatchClass(), nullptr);
     int i = 0;
     for (const auto& cheat : cheats) {
+        const auto jname = Common::Android::ToJString(env, cheat.name);
+        const auto jversion = Common::Android::ToJString(env, fmt::format("Cheat {}", cheat.build_id));
+        const auto jprogramId = Common::Android::ToJString(env, std::to_string(program_id));
+        const auto jbuildId = Common::Android::ToJString(env, cheat.build_id);
         jobject jpatch = env->NewObject(
             Common::Android::GetPatchClass(), Common::Android::GetPatchConstructor(), cheat.enabled,
-            Common::Android::ToJString(env, cheat.name),
-            Common::Android::ToJString(env, fmt::format("Cheat {}", cheat.build_id)),
-            static_cast<jint>(FileSys::PatchType::Cheat),
-            Common::Android::ToJString(env, std::to_string(program_id)),
-            Common::Android::ToJString(env, cheat.build_id));
+            jname, jversion, static_cast<jint>(FileSys::PatchType::Cheat), jprogramId, jbuildId);
         env->SetObjectArrayElement(jpatchArray, i, jpatch);
+        env->DeleteLocalRef(jpatch);
+        env->DeleteLocalRef(jname);
+        env->DeleteLocalRef(jversion);
+        env->DeleteLocalRef(jprogramId);
+        env->DeleteLocalRef(jbuildId);
         ++i;
     }
     return jpatchArray;

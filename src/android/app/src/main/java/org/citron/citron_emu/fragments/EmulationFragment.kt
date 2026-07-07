@@ -45,8 +45,11 @@ import androidx.window.layout.WindowLayoutInfo
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.slider.Slider
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.citron.citron_emu.HomeNavigationDirections
 import org.citron.citron_emu.NativeLibrary
 import org.citron.citron_emu.R
@@ -87,6 +90,7 @@ class EmulationFragment : Fragment(), SurfaceHolder.Callback {
 
     private val emulationViewModel: EmulationViewModel by activityViewModels()
     private val driverViewModel: DriverViewModel by activityViewModels()
+    private val cheatToggleMutex = Mutex()
 
     private var isInFoldableLayout = false
 
@@ -815,23 +819,30 @@ class EmulationFragment : Fragment(), SurfaceHolder.Callback {
     }
 
     private fun setCheatEnabled(cheat: Patch, enabled: Boolean) {
-        val shouldResume = emulationState.isRunning && !NativeLibrary.isPaused()
+        viewLifecycleOwner.lifecycleScope.launch {
+            cheatToggleMutex.withLock {
+                var shouldResume = false
+                try {
+                    shouldResume = emulationState.isRunning && !NativeLibrary.isPaused()
+                    if (shouldResume) {
+                        emulationState.pause()
+                    }
 
-        if (shouldResume) {
-            emulationState.pause()
-        }
+                    val reloaded = withContext(Dispatchers.IO) {
+                        NativeLibrary.setCheatEnabled(cheat.titleId, cheat.name, enabled)
+                        NativeConfig.saveGlobalConfig()
+                        NativeLibrary.reloadCheats(cheat.programId)
+                    }
 
-        viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
-            NativeLibrary.setCheatEnabled(cheat.titleId, cheat.name, enabled)
-            NativeConfig.saveGlobalConfig()
-            val reloaded = NativeLibrary.reloadCheats(cheat.programId)
-
-            withContext(Dispatchers.Main) {
-                if (!reloaded) {
-                    Log.warning("[EmulationFragment] Cheat reload requested without an active cheat engine.")
-                }
-                if (shouldResume && emulationState.isPaused) {
-                    emulationState.run(false)
+                    if (!reloaded) {
+                        Log.warning("[EmulationFragment] Cheat reload requested without an active cheat engine.")
+                    }
+                } finally {
+                    withContext(NonCancellable) {
+                        if (shouldResume && emulationState.isPaused) {
+                            emulationState.run(false)
+                        }
+                    }
                 }
             }
         }
