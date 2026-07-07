@@ -47,6 +47,7 @@ import org.citron.citron_emu.features.settings.model.IntSetting
 import org.citron.citron_emu.features.settings.model.Settings
 import org.citron.citron_emu.model.EmulationViewModel
 import org.citron.citron_emu.model.Game
+import org.citron.citron_emu.utils.DisplayModeUtil
 import org.citron.citron_emu.utils.InputHandler
 import org.citron.citron_emu.utils.Log
 import org.citron.citron_emu.utils.MemoryUtil
@@ -81,6 +82,7 @@ class EmulationActivity : AppCompatActivity(), SensorEventListener {
         ThemeHelper.setTheme(this)
 
         super.onCreate(savedInstanceState)
+        DisplayModeUtil.preferHighestRefreshRate(this)
 
         InputHandler.updateControllerData()
         val players = NativeConfig.getInputSettings(true)

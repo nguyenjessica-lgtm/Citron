@@ -70,6 +70,7 @@ class MainActivity : AppCompatActivity(), ThemeProvider {
         ThemeHelper.setTheme(this)
 
         super.onCreate(savedInstanceState)
+        DisplayModeUtil.preferHighestRefreshRate(this)
 
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
