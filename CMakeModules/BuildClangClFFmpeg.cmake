@@ -9,11 +9,18 @@ function(citron_build_clangcl_ffmpeg)
         message(FATAL_ERROR "clang-cl build requires CPM FFmpeg source")
     endif()
 
-    set(CITRON_MSYS2_ROOT "C:/msys64" CACHE PATH "MSYS2 install root")
-    find_program(BASH_PROGRAM bash
-        HINTS "${CITRON_MSYS2_ROOT}/usr/bin" REQUIRED)
-    find_program(MAKE_PROGRAM make
-        HINTS "${CITRON_MSYS2_ROOT}/usr/bin" REQUIRED)
+    set(CITRON_MSYS2_ROOT "" CACHE PATH "MSYS2 install root (auto-detected if empty)")
+    # Find bash and make: prefer the HINTS path if CITRON_MSYS2_ROOT is set,
+    # otherwise rely on PATH (populated by the build script's batch file).
+    if (CITRON_MSYS2_ROOT)
+        find_program(BASH_PROGRAM bash
+            HINTS "${CITRON_MSYS2_ROOT}/usr/bin" REQUIRED)
+        find_program(MAKE_PROGRAM make
+            HINTS "${CITRON_MSYS2_ROOT}/usr/bin" REQUIRED)
+    else()
+        find_program(BASH_PROGRAM bash REQUIRED)
+        find_program(MAKE_PROGRAM make REQUIRED)
+    endif()
     include(ProcessorCount)
     ProcessorCount(_ffmpeg_jobs)
     if(NOT _ffmpeg_jobs)
@@ -21,14 +28,24 @@ function(citron_build_clangcl_ffmpeg)
     endif()
 
     set(_source_dir "${FFMPEG_CPM_SOURCE_DIR}")
-    set(_build_dir "${PROJECT_BINARY_DIR}/externals/ffmpeg-clangcl-build")
-    set(_install_dir "${PROJECT_BINARY_DIR}/externals/ffmpeg-clangcl-install")
+    # ── Global artifact cache ──────────────────────────────────────────────────
+    # When CLANGCL_FFMPEG_CACHE_DIR is set (by build-clangtron-windows.sh), the
+    # built FFmpeg install lives there (under CPM_SOURCE_CACHE) rather than in the
+    # per-stage cmake binary dir, so all clang-cl stages share one FFmpeg build.
+    if (DEFINED CLANGCL_FFMPEG_CACHE_DIR AND NOT "${CLANGCL_FFMPEG_CACHE_DIR}" STREQUAL "")
+        set(_build_dir  "${CLANGCL_FFMPEG_CACHE_DIR}/build")
+        set(_install_dir "${CLANGCL_FFMPEG_CACHE_DIR}/install")
+        message(STATUS "[FFmpeg/clang-cl] Using global cache dir: ${CLANGCL_FFMPEG_CACHE_DIR}")
+    else()
+        set(_build_dir  "${PROJECT_BINARY_DIR}/externals/ffmpeg-clangcl-build")
+        set(_install_dir "${PROJECT_BINARY_DIR}/externals/ffmpeg-clangcl-install")
+    endif()
     get_filename_component(_clangcl_tool_dir "${CMAKE_C_COMPILER}" DIRECTORY)
     get_filename_component(_linker_tool_dir "${CMAKE_LINKER}" DIRECTORY)
     get_filename_component(_ar_tool_dir "${CMAKE_AR}" DIRECTORY)
     execute_process(
         COMMAND "${CMAKE_COMMAND}" -E env "MSYS2_ARG_CONV_EXCL=*"
-            "${BASH_PROGRAM}" -lc "cygpath -am '${_source_dir}' && cygpath -am '${_build_dir}' && cygpath -am '${_install_dir}' && cygpath -au '${_clangcl_tool_dir}' && cygpath -au '${_linker_tool_dir}' && cygpath -au '${_ar_tool_dir}'"
+            "${BASH_PROGRAM}" -lc "cygpath -am '${_source_dir}' && cygpath -am '${_build_dir}' && cygpath -am '${_install_dir}' && cygpath -au '${_clangcl_tool_dir}' && cygpath -au '${_linker_tool_dir}' && cygpath -au '${_ar_tool_dir}' && cygpath -au '${_install_dir}'"
         OUTPUT_VARIABLE _clangcl_ffmpeg_paths
         OUTPUT_STRIP_TRAILING_WHITESPACE
         COMMAND_ERROR_IS_FATAL ANY
@@ -40,6 +57,8 @@ function(citron_build_clangcl_ffmpeg)
     list(GET _clangcl_ffmpeg_paths 3 _clangcl_tool_dir_msys)
     list(GET _clangcl_ffmpeg_paths 4 _linker_tool_dir_msys)
     list(GET _clangcl_ffmpeg_paths 5 _ar_tool_dir_msys)
+    # MSYS paths for bash commands (cd, mv) — separate from Windows mixed paths
+    list(GET _clangcl_ffmpeg_paths 6 _install_dir_msys)
     set(_build_stamp "${_install_dir}/.built")
     file(MAKE_DIRECTORY "${_build_dir}" "${_install_dir}")
     set(_ffmpeg_configure_command
@@ -97,17 +116,21 @@ function(citron_build_clangcl_ffmpeg)
             "${MAKE_PROGRAM}" -j${_ffmpeg_jobs}
         COMMAND "${CMAKE_COMMAND}" -E env "MSYS2_ARG_CONV_EXCL=*"
             "${MAKE_PROGRAM}" install
-        COMMAND "${CMAKE_COMMAND}" -E make_directory "${_install_dir_win}/lib"
-        COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${_install_dir_win}/lib/libavfilter.a" "${_install_dir_win}/lib/avfilter.lib"
-        COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${_install_dir_win}/lib/libswscale.a" "${_install_dir_win}/lib/swscale.lib"
-        COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${_install_dir_win}/lib/libavcodec.a" "${_install_dir_win}/lib/avcodec.lib"
-        COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${_install_dir_win}/lib/libavutil.a" "${_install_dir_win}/lib/avutil.lib"
+        COMMAND "${CMAKE_COMMAND}" -E env "MSYS2_ARG_CONV_EXCL=*"
+            "${BASH_PROGRAM}" -lc
+            "cd '${_install_dir_msys}/lib' && test -f libavfilter.a && mv -f libavfilter.a avfilter.lib; test -f libswscale.a && mv -f libswscale.a swscale.lib; test -f libavcodec.a && mv -f libavcodec.a avcodec.lib; test -f libavutil.a && mv -f libavutil.a avutil.lib; true"
         COMMAND "${CMAKE_COMMAND}" -E touch "${_build_stamp}"
         DEPENDS "${CMAKE_CURRENT_LIST_FILE}" "${_source_dir}/configure"
         WORKING_DIRECTORY "${_build_dir_win}"
         VERBATIM
     )
     add_custom_target(ffmpeg-build ALL DEPENDS "${_build_stamp}")
+
+    # Expose the stamp path so video_core/CMakeLists.txt can set OBJECT_DEPENDS
+    # on sources that include FFmpeg headers, preventing them from compiling
+    # before make install has written the headers.  Clang-cl path only.
+    set(CLANGCL_FFMPEG_BUILD_STAMP "${_build_stamp}" CACHE INTERNAL
+        "Stamp file written when clang-cl FFmpeg build+install completes")
 
     set(_libraries
         "${_install_dir}/lib/avfilter.lib"

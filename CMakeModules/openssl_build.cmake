@@ -17,7 +17,18 @@
 # execute_process during cmake configure.
 
 set(_OPENSSL_VERSION "3.4.1")
-set(_OPENSSL_INSTALL "${CMAKE_BINARY_DIR}/externals/openssl-install")
+
+# ── clang-cl global artifact cache ──────────────────────────────────────────
+# When CLANGCL_OPENSSL_CACHE_DIR is set (by build-clangtron-windows.sh), the
+# built OpenSSL install is stored there (under CPM_SOURCE_CACHE) rather than
+# in the per-stage cmake binary dir.  This lets generate/csgenerate/use stages
+# share a single OpenSSL build and survive binary-dir rebuilds.
+if (DEFINED CLANGCL_OPENSSL_CACHE_DIR AND NOT "${CLANGCL_OPENSSL_CACHE_DIR}" STREQUAL "")
+    set(_OPENSSL_INSTALL "${CLANGCL_OPENSSL_CACHE_DIR}")
+    message(STATUS "[OpenSSL] Using global clang-cl cache dir: ${_OPENSSL_INSTALL}")
+else()
+    set(_OPENSSL_INSTALL "${CMAKE_BINARY_DIR}/externals/openssl-install")
+endif()
 
 # OpenSSL's Perl Configure script cannot handle spaces in the working directory
 # or source path (same limitation as FFmpeg's configure).  When CMAKE_BINARY_DIR

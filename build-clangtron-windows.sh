@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+﻿#!/usr/bin/env bash
 # SPDX-FileCopyrightText: 2026 citron Emulator Project
 # SPDX-License-Identifier: GPL-3.0-or-later
 # =============================================================================
@@ -674,45 +674,84 @@ stage_setup_clangcl() {
         mingw-w64-clang-x86_64-sccache mingw-w64-clang-x86_64-jom \
         2>/dev/null || error "Failed to install required MSYS2 packages."
 
-    local winget
-    winget="$(command -v winget.exe 2>/dev/null || true)"
-    if [[ -z "${winget}" && -n "${LOCALAPPDATA:-}" ]]; then
-        local winget_candidate
-        winget_candidate="$(cygpath -au "${LOCALAPPDATA}")/Microsoft/WindowsApps/winget.exe"
-        [[ -x "${winget_candidate}" ]] && winget="${winget_candidate}"
-    fi
-    [[ -n "${winget}" ]] ||
-        error "winget.exe not found. Install Microsoft App Installer, then re-run setup."
-    winget_install() {
-        local id="$1"
-        info "Ensuring ${id} is installed..."
-        "${winget}" install --id "${id}" --exact --silent \
-            --accept-package-agreements --accept-source-agreements \
-            || warn "winget could not install ${id}; it may already be installed."
-    }
-
-    [[ -x /c/Strawberry/perl/bin/perl.exe ]] || winget_install StrawberryPerl.StrawberryPerl
+    # Locate optional Windows prerequisites. On GitHub Actions windows-2022
+    # runners these are all pre-installed; on a developer machine we fall back
+    # to winget for anything that is missing.
     local setup_python=""
-    for setup_python_candidate in /c/Python312/python.exe \
-        /c/hostedtoolcache/windows/Python/3.12.*/x64/python.exe \
-        /c/Users/*/AppData/Local/Programs/Python/Python312/python.exe; do
+    for setup_python_candidate in \
+            /c/hostedtoolcache/windows/Python/3.12.*/x64/python.exe \
+            /c/Python312/python.exe \
+            /c/Users/*/AppData/Local/Programs/Python/Python312/python.exe; do
         if [[ -x "${setup_python_candidate}" ]]; then
             setup_python="${setup_python_candidate}"
             break
         fi
     done
-    [[ -n "${setup_python}" ]] || winget_install Python.Python.3.12
-    if [[ -z "${setup_python}" ]]; then
-        for setup_python_candidate in /c/Python312/python.exe \
-            /c/Users/*/AppData/Local/Programs/Python/Python312/python.exe; do
-            if [[ -x "${setup_python_candidate}" ]]; then
-                setup_python="${setup_python_candidate}"
-                break
-            fi
-        done
+
+    # Determine whether anything actually needs to be installed.
+    local _need_winget=0
+    [[ -x /c/Strawberry/perl/bin/perl.exe ]]         || _need_winget=1
+    [[ -n "${setup_python}" ]]                        || _need_winget=1
+    [[ -x "/c/Program Files/CMake/bin/cmake.exe" ]]  || _need_winget=1
+    [[ -x "/c/Program Files/Git/cmd/git.exe" ]]      || _need_winget=1
+
+    if [[ "${_need_winget}" -eq 1 ]]; then
+        local winget
+        winget="$(command -v winget.exe 2>/dev/null || true)"
+        if [[ -z "${winget}" && -n "${LOCALAPPDATA:-}" ]]; then
+            local winget_candidate
+            winget_candidate="$(cygpath -au "${LOCALAPPDATA}")/Microsoft/WindowsApps/winget.exe"
+            [[ -x "${winget_candidate}" ]] && winget="${winget_candidate}"
+        fi
+        [[ -n "${winget}" ]] ||
+            error "winget.exe not found. Install Microsoft App Installer, then re-run setup."
+
+        winget_install() {
+            local id="$1"
+            info "Ensuring ${id} is installed..."
+            "${winget}" install --id "${id}" --exact --silent \
+                --accept-package-agreements --accept-source-agreements \
+                || warn "winget could not install ${id}; it may already be installed."
+        }
+
+        [[ -x /c/Strawberry/perl/bin/perl.exe ]]        || winget_install StrawberryPerl.StrawberryPerl
+        [[ -n "${setup_python}" ]]                       || winget_install Python.Python.3.12
+        [[ -x "/c/Program Files/CMake/bin/cmake.exe" ]] || winget_install Kitware.CMake
+        [[ -x "/c/Program Files/Git/cmd/git.exe" ]]     || winget_install Git.Git
+
+        # Re-probe Python after potential winget install.
+        if [[ -z "${setup_python}" ]]; then
+            for setup_python_candidate in /c/Python312/python.exe \
+                    /c/Users/*/AppData/Local/Programs/Python/Python312/python.exe; do
+                if [[ -x "${setup_python_candidate}" ]]; then
+                    setup_python="${setup_python_candidate}"
+                    break
+                fi
+            done
+        fi
+    else
+        info "All Windows prerequisites already present — skipping winget."
     fi
-    [[ -x "/c/Program Files/CMake/bin/cmake.exe" ]] || winget_install Kitware.CMake
-    [[ -x "/c/Program Files/Git/cmd/git.exe" ]] || winget_install Git.Git
+
+    # Install aqtinstall into the native Windows Python so cmake's find_program
+    # can locate aqt.exe (via Scripts/) during the configure phase.
+    local _pip_python=""
+    for _pip_candidate in \
+            /c/hostedtoolcache/windows/Python/3.12.*/x64/python.exe \
+            /c/Python312/python.exe \
+            "${setup_python}"; do
+        if [[ -x "${_pip_candidate}" ]]; then
+            _pip_python="${_pip_candidate}"
+            break
+        fi
+    done
+    if [[ -n "${_pip_python}" ]]; then
+        info "Installing aqtinstall into native Windows Python ($(basename "$(dirname "${_pip_python}")")/python)..."
+        "${_pip_python}" -m pip install aqtinstall --quiet \
+            || warn "aqtinstall install failed — Qt download during cmake configure may fail"
+    else
+        warn "No native Windows Python found — aqtinstall not installed. Qt may fail to download."
+    fi
     local vswhere="/c/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe"
     [[ -x "${vswhere}" ]] ||
         error "Visual Studio Installer/vswhere missing. Install Visual Studio 2022 first."
@@ -4767,6 +4806,27 @@ stage_clangcl() {
     [[ "${STAGE}" != "csgenerate" || "${PGO_MODE}" == "ir" ]] ||
         error "clang-cl csgenerate requires --pgo ir."
 
+    # ── Sentinel: record generate config; verify it matches on csgenerate/use ─
+    # Mirrors the llvm-mingw sentinel logic so LTO+PGO mismatches are caught
+    # before a long build wastes time.
+    local _gen_cfg="${BUILD_ROOT}/.citron-clangcl-gen-config"
+    if [[ "${STAGE}" == "generate" ]]; then
+        printf "LTO=%s\nPGO=%s\n" "${LTO_MODE}" "${PGO_MODE}" > "${_gen_cfg}"
+    elif [[ -f "${_gen_cfg}" ]]; then
+        local _gen_lto _gen_pgo
+        _gen_lto=$(awk -F= '/^LTO=/{print $2; exit}' "${_gen_cfg}" 2>/dev/null || true)
+        _gen_pgo=$(awk -F= '/^PGO=/{print $2; exit}' "${_gen_cfg}" 2>/dev/null || true)
+        if [[ -n "${_gen_lto}" && "${_gen_lto}" != "${LTO_MODE}" ]]; then
+            error "LTO mismatch: generate used LTO=${_gen_lto}, ${STAGE} has LTO=${LTO_MODE}.\n" \
+                  "       IR PGO profiles are tied to the IR produced at generate time.\n" \
+                  "       Re-run ${STAGE} with --lto ${_gen_lto}."
+        fi
+        if [[ -n "${_gen_pgo}" && "${_gen_pgo}" != "${PGO_MODE}" ]]; then
+            error "PGO mismatch: generate used PGO=${_gen_pgo}, ${STAGE} has PGO=${PGO_MODE}.\n" \
+                  "       Re-run ${STAGE} with --pgo ${_gen_pgo}."
+        fi
+    fi
+
     local vswhere="/c/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe"
     if [[ -z "${VS_INSTALL_PATH}" ]]; then
         [[ -x "${vswhere}" ]] || error "vswhere.exe not found; install Visual Studio Installer or set VS_INSTALL_PATH."
@@ -4858,23 +4918,132 @@ stage_clangcl() {
         fe:generate) flags="/clang:-fprofile-instr-generate" ;;
         ir:generate) flags="/clang:-fprofile-generate" ;;
         fe:use|ir:use)
-            local merged="${PROFILE_DIR}/clang-cl-${PGO_MODE}.profdata"
-            local raw=("${PROFILE_DIR}"/*.profraw)
-            [[ -e "${raw[0]}" ]] || error "No .profraw files in ${PROFILE_DIR}; run instrumented workload first."
-            "${llvm_profdata}" merge -output="${merged}" "${raw[@]}" ||
-                error "llvm-profdata merge failed."
-            if [[ "${PGO_MODE}" == "fe" ]]; then
-                flags="/clang:-fprofile-instr-use=$(cygpath -am "${merged}")"
+            # Priority:
+            #   1. merged.profdata   (stage1 + CS combined — use after CS session)
+            #   2. default.profdata  (stage1 only — use before or without CS)
+            #   3. *.profraw         (on-the-fly merge from raw files)
+            #
+            # Guard: if merged.profdata exists but new CS profraw has arrived in
+            # pgo-profiles/cs/ since it was written, the file is stale (missing
+            # the CS layer). Remove it so the merge block below re-runs.
+            local merged_pd="${PROFILE_DIR}/clang-cl-merged.profdata"
+            local stage1_pd="${PROFILE_DIR}/clang-cl-ir.profdata"
+            local profdata_use
+
+            if [[ -f "${merged_pd}" ]]; then
+                local _cs_dir_check="${PROFILE_DIR}/cs"
+                normalize_profraw_dirs "${_cs_dir_check}" 2>/dev/null || true
+                local _cs_pending
+                _cs_pending=$(find "${_cs_dir_check}" -maxdepth 1 -name "*.profraw" \
+                              2>/dev/null | wc -l)
+                if [[ "${_cs_pending}" -gt 0 ]]; then
+                    warn "clang-cl-merged.profdata exists but ${_cs_pending} unmerged CS" \
+                         "profraw file(s) found in ${_cs_dir_check}."
+                    warn "Removing stale merged profdata and re-merging with CS data..."
+                    rm -f "${merged_pd}"
+                fi
+            fi
+
+            if [[ -f "${merged_pd}" ]]; then
+                profdata_use="${merged_pd}"
+                info "Using CS-IRPGO merged profile: ${profdata_use}"
+            elif [[ -f "${stage1_pd}" ]]; then
+                # Check whether CS profraw exists and needs merging
+                local cs_dir="${PROFILE_DIR}/cs"
+                normalize_profraw_dirs "${cs_dir}" 2>/dev/null || true
+                local cs_count
+                cs_count=$(find "${cs_dir}" -maxdepth 1 -name "*.profraw" \
+                           2>/dev/null | wc -l)
+                if [[ "${cs_count}" -gt 0 ]]; then
+                    info "CS profraw detected (${cs_count} files) — merging with stage1..."
+                    local cs_tmp="${PROFILE_DIR}/clang-cl-cs-only.profdata"
+                    "${llvm_profdata}" merge -output="${cs_tmp}" "${cs_dir}"/*.profraw ||
+                        error "llvm-profdata CS merge failed."
+                    "${llvm_profdata}" merge -output="${merged_pd}" \
+                        "${stage1_pd}" "${cs_tmp}" ||
+                        error "llvm-profdata stage1+CS merge failed."
+                    rm -f "${cs_tmp}"
+                    profdata_use="${merged_pd}"
+                    info "CS-IRPGO merged profile written: ${profdata_use}"
+                else
+                    profdata_use="${stage1_pd}"
+                    info "Using stage1 profile (no CS data): ${profdata_use}"
+                fi
             else
-                flags="/clang:-fprofile-use=$(cygpath -am "${merged}")"
+                # On-the-fly merge from raw files
+                normalize_profraw_dirs "${PROFILE_DIR}" 2>/dev/null || true
+                local raw=("${PROFILE_DIR}"/*.profraw)
+                [[ -e "${raw[0]}" ]] || error \
+                    "No .profraw files in ${PROFILE_DIR}; run instrumented workload first.\n" \
+                    "       Collect default-<pid>.profraw from Windows, copy to ${PROFILE_DIR}/,\n" \
+                    "       then re-run: ./build-clangtron-windows.sh use --compiler clang-cl --pgo ir"
+                "${llvm_profdata}" merge -output="${stage1_pd}" "${raw[@]}" ||
+                    error "llvm-profdata merge failed."
+                profdata_use="${stage1_pd}"
+                info "Merged ${#raw[@]} profraw file(s) → ${stage1_pd}"
+            fi
+
+            if [[ "${PGO_MODE}" == "fe" ]]; then
+                flags="/clang:-fprofile-instr-use=$(cygpath -am "${profdata_use}")"
+            else
+                flags="/clang:-fprofile-use=$(cygpath -am "${profdata_use}")"
             fi
             ;;
         ir:csgenerate)
             local stage1="${PROFILE_DIR}/clang-cl-ir.profdata"
-            local ir_raw=("${PROFILE_DIR}"/citron-generate-*.profraw)
-            [[ -e "${ir_raw[0]}" ]] || error "No stage-1 .profraw files in ${PROFILE_DIR}."
-            "${llvm_profdata}" merge -output="${stage1}" "${ir_raw[@]}" ||
-                error "llvm-profdata stage-1 merge failed."
+            # CRITICAL INVARIANT: csgenerate must use ONLY the plain stage1
+            # profdata for -fprofile-use, never merged.profdata.
+            # merged.profdata contains CS records keyed to the previous
+            # csgenerate binary's IR. Feeding those through -fprofile-use
+            # changes inlining decisions, restructuring the IR the new CS
+            # counters are keyed to. The use stage then builds from the plain
+            # stage1 baseline — every reshaped function hash-mismatches.
+            # See CRITICAL INVARIANT in the script header.
+            #
+            # Priority:
+            #   1. clang-cl-ir.profdata  (already-merged stage1, idempotent re-run)
+            #   2. default.profdata      (stage1 from llvm-mingw use/csgenerate path)
+            #   3. citron-generate-*.profraw  (canonical clang-cl generate output)
+            #   4. *.profraw             (fallback when LLVM_PROFILE_FILE was not set)
+            if [[ -f "${stage1}" ]]; then
+                info "Using existing stage-1 profdata: ${stage1}"
+            elif [[ -f "${PROFILE_DIR}/default.profdata" ]]; then
+                info "Using default.profdata as stage-1 profdata."
+                stage1="${PROFILE_DIR}/default.profdata"
+            else
+                # Explicit guard: merged.profdata without default.profdata means
+                # the stage1 raw files have been discarded after a CS cycle.
+                # Using merged.profdata here would violate the critical invariant.
+                local merged_check="${PROFILE_DIR}/clang-cl-merged.profdata"
+                if [[ ! -f "${merged_check}" ]]; then
+                    merged_check="${PROFILE_DIR}/merged.profdata"
+                fi
+                if [[ -f "${merged_check}" ]]; then
+                    error "default.profdata not found, but merged.profdata exists.\n" \
+                          "       merged.profdata contains CS records from a previous cycle and\n" \
+                          "       MUST NOT be used as the stage1 base for csgenerate.\n" \
+                          "       To rebuild default.profdata:\n" \
+                          "         1. Copy the original stage1 profraw files to ${PROFILE_DIR}/\n" \
+                          "         2. Re-run: ./build-clangtron-windows.sh use --compiler clang-cl --pgo ir\n" \
+                          "            (this produces clang-cl-ir.profdata from the stage1 profraw)"
+                fi
+                # Try to merge from raw files.
+                normalize_profraw_dirs "${PROFILE_DIR}" 2>/dev/null || true
+                local ir_raw=("${PROFILE_DIR}"/citron-generate-*.profraw)
+                if [[ ! -e "${ir_raw[0]}" ]]; then
+                    # Fallback: accept any *.profraw (e.g. default-<pid>.profraw
+                    # written when LLVM_PROFILE_FILE was not explicitly set).
+                    ir_raw=("${PROFILE_DIR}"/*.profraw)
+                    [[ -e "${ir_raw[0]}" ]] || error \
+                        "No stage-1 .profraw files in ${PROFILE_DIR}.\n" \
+                        "       Run generate, then profile citron.exe with:\n" \
+                        "         \$env:LLVM_PROFILE_FILE='${PROFILE_DIR}/citron-generate-%p.profraw'\n" \
+                        "       Copy the resulting .profraw to ${PROFILE_DIR}/ and re-run csgenerate."
+                fi
+                info "Merging ${#ir_raw[@]} stage-1 .profraw file(s) → ${stage1##*/}..."
+                "${llvm_profdata}" merge -output="${stage1}" "${ir_raw[@]}" ||
+                    error "llvm-profdata stage-1 merge failed."
+            fi
             flags="/clang:-fprofile-use=$(cygpath -am "${stage1}") /clang:-fcs-profile-generate"
             ;;
         *) error "Unsupported clang-cl PGO flow: ${PGO_MODE}:${STAGE}" ;;
@@ -4886,7 +5055,7 @@ stage_clangcl() {
     esac
 
     local source_win build_win package_win build_copy_win package_copy_win batch_win cpm_win vsdev_win perl_win python_win
-    local clang_cl_win clang_bin_win ninja_win
+    local clang_cl_win clang_bin_win ninja_win clang64_bin_win
     source_win="$(cygpath -am "${SOURCE_DIR}")"
     build_win="$(cygpath -am "${build_dir}")"
     package_win="$(cygpath -am "${package_dir}")"
@@ -4900,12 +5069,85 @@ stage_clangcl() {
     clang_cl_win="$(cygpath -am "${clang_cl}")"
     clang_bin_win="$(cygpath -am "$(dirname "${clang_cl}")")"
     ninja_win="$(cygpath -am "${ninja}")"
+    # Resolve the actual MSYS2 clang64/bin path dynamically so it works
+    # regardless of where the msys2/setup-msys2 action installs MSYS2
+    # (C:\msys64 on local machines, varies on GitHub Actions runners).
+    clang64_bin_win="$(cygpath -am /clang64/bin)"
+    local msys2_usr_bin_win
+    msys2_usr_bin_win="$(cygpath -am /usr/bin)"
+    # Resolve native Python Scripts dir for aqt.exe (needed by cmake find_program).
+    local python_scripts_win=""
+    local _py_scripts_candidate
+    for _py_scripts_candidate in \
+            /c/hostedtoolcache/windows/Python/3.12.*/x64 \
+            /c/Python312; do
+        if [[ -x "${_py_scripts_candidate}/python.exe" ]]; then
+            python_scripts_win="$(cygpath -am "${_py_scripts_candidate}/Scripts")"
+            break
+        fi
+    done
+
+    # ── Artifact cache resolution ─────────────────────────────────────────────
+    # Qt, OpenSSL, and FFmpeg are stored under CPM_SOURCE_CACHE so they survive
+    # across all clang-cl stages and binary-dir rebuilds.  None of these
+    # artifacts are affected by Unity, RelWithDebInfo, or PGO options, so a
+    # single cached copy is shared across all build configurations.
+    local _qt_version="6.9.3"
+    local _openssl_version="3.4.1"
+    local _ffmpeg_tag="n8.0"
+
+    # Qt: qt_download.cmake already writes to CPM_SOURCE_CACHE/qt-bin/.
+    # Pre-check here and pass Qt6_DIR to cmake so the configure-time download
+    # is skipped when the cache is warm.
+    local _qt_cache_dir="${CPM_SOURCE_CACHE}/qt-bin/${_qt_version}/msvc2022_64"
+    local _qt6_dir="${_qt_cache_dir}/lib/cmake/Qt6"
+    local qt6_dir_win="" qt_target_path_win=""
+    if [[ -f "${_qt6_dir}/Qt6Config.cmake" ]]; then
+        info "Qt ${_qt_version} (msvc2022_64) found in CPM cache — skipping aqt download."
+        qt6_dir_win="$(cygpath -am "${_qt6_dir}")"
+        qt_target_path_win="$(cygpath -am "${_qt_cache_dir}")"
+    else
+        info "Qt ${_qt_version} (msvc2022_64) not in CPM cache — will download during cmake configure."
+        if [[ -n "${native_python}" ]]; then
+            "${native_python}" -m pip install aqtinstall --quiet 2>/dev/null || true
+        fi
+    fi
+
+    # OpenSSL: keyed on version + build target (VC-WIN64A).
+    # LTO, PGO, and Unity do not affect the OpenSSL static libs.
+    local _openssl_cache_dir="${CPM_SOURCE_CACHE}/citron-openssl-clangcl/${_openssl_version}-VC-WIN64A"
+    local openssl_cache_dir_win
+    openssl_cache_dir_win="$(cygpath -am "${_openssl_cache_dir}")"
+    mkdir -p "${_openssl_cache_dir}"
+
+    # FFmpeg: keyed on git tag (n8.0).  Fixed configure flags — no LTO/PGO.
+    local _ffmpeg_cache_dir="${CPM_SOURCE_CACHE}/citron-ffmpeg-clangcl/${_ffmpeg_tag}"
+    local ffmpeg_cache_dir_win
+    ffmpeg_cache_dir_win="$(cygpath -am "${_ffmpeg_cache_dir}")"
+    mkdir -p "${_ffmpeg_cache_dir}/build" "${_ffmpeg_cache_dir}/install"
+
+    # that rc.exe rejects (/D is required), and WIN32 is defined by SDK headers anyway.
+    # The <DEFINES> from COMPILE_DEFINITIONS (BOOST_CONTEXT_EXPORT="" etc.) are
+    # handled by cmake 3.31's cmcldeps.exe wrapper via CMAKE_RC_FLAG_REGEX filtering.
+    # System cmake (3.31) is placed first in PATH to ensure cmcldeps.exe is used.
+
+    # Build the Qt cmake arguments — pass pre-resolved paths when the cache is
+    # warm so cmake does not need to invoke aqt at configure time.
+    # qt_cmake_line expands to a cmake arg line including the cmd ^ continuation.
+    # When Qt is not pre-cached it is an empty -DQt6_DIR= (no-op, cmake ignores
+    # unset cache entries) so the heredoc always has a valid continuation line.
+    local qt_cmake_line
+    if [[ -n "${qt6_dir_win}" ]]; then
+        qt_cmake_line="  -DQt6_DIR=\"${qt6_dir_win}\" -DQT_TARGET_PATH=\"${qt_target_path_win}\" ^"
+    else
+        qt_cmake_line="  -DQt6_DIR= ^"
+    fi
 
     cat > "${build_dir}/build-clang-cl.cmd" <<CLANGCL_CMD_EOF
 @echo off
 setlocal
 for %%V in (CPATH C_INCLUDE_PATH CPLUS_INCLUDE_PATH CFLAGS CXXFLAGS CPPFLAGS INCLUDE LIB LIBPATH PKG_CONFIG_PATH PKG_CONFIG_LIBDIR) do set "%%V="
-set "PATH=${clang_bin_win};%SystemRoot%\System32;%SystemRoot%;%SystemRoot%\System32\Wbem;C:\Program Files\CMake\bin;C:\Program Files\Git\cmd;C:\Python312;C:\msys64\clang64\bin"
+set "PATH=${clang_bin_win};C:\Program Files\CMake\bin;${clang64_bin_win};${msys2_usr_bin_win};%SystemRoot%\System32;%SystemRoot%;%SystemRoot%\System32\Wbem;C:\Program Files\Git\cmd;C:\Python312;${python_scripts_win}"
 call "${vsdev_win}" -arch=x64 -host_arch=x64
 if errorlevel 1 exit /b %errorlevel%
 if not defined CPM_SOURCE_CACHE set "CPM_SOURCE_CACHE=${cpm_win}"
@@ -4923,14 +5165,17 @@ ${sccache_cmake_args}
   -DENABLE_UNITY_BUILD=${UNITY_BUILD} ^
   -DPython3_EXECUTABLE="${python_win}" ^
   -DPERL_EXECUTABLE="${perl_win}" ^
-  -D_OPENSSL_NASM=C:/msys64/clang64/bin/nasm.exe ^
-  -DGLSLANGVALIDATOR=C:/msys64/clang64/bin/glslangValidator.exe ^
+  -D_OPENSSL_NASM=${clang64_bin_win}/nasm.exe ^
+  -DGLSLANGVALIDATOR=${clang64_bin_win}/glslangValidator.exe ^
+  -DCLANGCL_OPENSSL_CACHE_DIR="${openssl_cache_dir_win}" ^
+  -DCLANGCL_FFMPEG_CACHE_DIR="${ffmpeg_cache_dir_win}" ^
+${qt_cmake_line}
   -DCITRON_ENABLE_LTO=OFF ^
   -DCITRON_ENABLE_PGO_GENERATE=OFF -DCITRON_ENABLE_PGO_USE=OFF ^
   -DCMAKE_C_FLAGS_${config^^}="${config_compile_flags} ${flags}" -DCMAKE_CXX_FLAGS_${config^^}="${config_compile_flags} ${flags}" ^
-  -DCMAKE_EXE_LINKER_FLAGS_${config^^}="${config_link_flags} ${flags}"
+  -DCMAKE_EXE_LINKER_FLAGS_${config^^}="${config_link_flags} ${flags}" ^
+  -DCMAKE_RC_FLAGS="" -DCMAKE_RC_FLAGS_DEBUG="" -DCMAKE_RC_FLAGS_RELEASE="" -DCMAKE_RC_FLAGS_RELWITHDEBINFO=""
 if errorlevel 1 exit /b %errorlevel%
-set "PATH=%PATH%;C:\msys64\usr\bin"
 cmake --build "${build_win}" --config ${config} --parallel ${JOBS} --target citron-runtime
 if not %errorlevel%==0 exit /b 1
 ${sccache_stats_cmd}
