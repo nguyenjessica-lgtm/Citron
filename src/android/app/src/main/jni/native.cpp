@@ -878,16 +878,17 @@ jobjectArray Java_org_citron_citron_1emu_NativeLibrary_getCheatsForFile(JNIEnv* 
     for (const auto& cheat : cheats) {
         const auto jname = Common::Android::ToJString(env, cheat.name);
         const auto jversion = Common::Android::ToJString(env, fmt::format("Cheat {}", cheat.build_id));
-        const auto jprogramId = Common::Android::ToJString(env, std::to_string(program_id));
+        const auto jpatchProgramId = Common::Android::ToJString(env, std::to_string(program_id));
         const auto jbuildId = Common::Android::ToJString(env, cheat.build_id);
         jobject jpatch = env->NewObject(
             Common::Android::GetPatchClass(), Common::Android::GetPatchConstructor(), cheat.enabled,
-            jname, jversion, static_cast<jint>(FileSys::PatchType::Cheat), jprogramId, jbuildId);
+            jname, jversion, static_cast<jint>(FileSys::PatchType::Cheat), jpatchProgramId,
+            jbuildId);
         env->SetObjectArrayElement(jpatchArray, i, jpatch);
         env->DeleteLocalRef(jpatch);
         env->DeleteLocalRef(jname);
         env->DeleteLocalRef(jversion);
-        env->DeleteLocalRef(jprogramId);
+        env->DeleteLocalRef(jpatchProgramId);
         env->DeleteLocalRef(jbuildId);
         ++i;
     }
