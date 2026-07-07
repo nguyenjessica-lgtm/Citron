@@ -70,6 +70,8 @@ public:
     void Initialize();
     void SetMainMemoryParameters(VAddr main_region_begin, u64 main_region_size);
 
+    [[nodiscard]] const std::array<u8, 0x20>& GetBuildId() const;
+
     void Reload(std::vector<CheatEntry> reload_cheats);
 
 private:

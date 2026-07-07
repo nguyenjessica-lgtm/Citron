@@ -270,6 +270,10 @@ void CheatEngine::SetMainMemoryParameters(VAddr main_region_begin, u64 main_regi
     };
 }
 
+const std::array<u8, 0x20>& CheatEngine::GetBuildId() const {
+    return metadata.main_nso_build_id;
+}
+
 void CheatEngine::Reload(std::vector<CheatEntry> reload_cheats) {
     std::scoped_lock lock{cheats_mutex};
     cheats = std::move(reload_cheats);

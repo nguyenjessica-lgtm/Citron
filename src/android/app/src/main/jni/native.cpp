@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <algorithm>
+#include <array>
 #include <codecvt>
 #include <cctype>
 #include <locale>
@@ -10,6 +11,7 @@
 #include <string_view>
 #include <dlfcn.h>
 #include <functional>
+#include <iterator>
 
 #ifdef ARCHITECTURE_arm64
 #include <adrenotools/driver.h>
@@ -29,6 +31,7 @@
 #include "common/detached_tasks.h"
 #include "common/dynamic_library.h"
 #include "common/fs/path_util.h"
+#include "common/hex_util.h"
 #include "common/logging.h"
 #include "common/logging.h"
 #include "common/scm_rev.h"
@@ -82,10 +85,16 @@
 #define jauto [[maybe_unused]] auto
 
 namespace {
+constexpr std::size_t CHEAT_BUILD_ID_LENGTH = sizeof(u64) * 2;
+
 std::string NormalizeCheatBuildId(std::string build_id) {
     std::transform(build_id.begin(), build_id.end(), build_id.begin(),
                    [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
     return build_id;
+}
+
+std::string GetCheatBuildId(const std::array<u8, 0x20>& build_id) {
+    return NormalizeCheatBuildId(Common::HexToString(build_id).substr(0, CHEAT_BUILD_ID_LENGTH));
 }
 } // namespace
 
@@ -870,12 +879,22 @@ jobjectArray Java_org_citron_citron_1emu_NativeLibrary_getCheatsForFile(JNIEnv* 
     const auto program_id = EmulationSession::GetProgramId(env, jprogramId);
     const FileSys::PatchManager pm{program_id, system.GetFileSystemController(),
                                    system.GetContentProvider()};
+    const auto* cheat_engine = system.GetCheatEngine();
+    const auto active_build_id =
+        cheat_engine == nullptr ? std::string{} : GetCheatBuildId(cheat_engine->GetBuildId());
 
     const auto cheats = pm.GetCheats();
+    std::vector<FileSys::CheatPatch> active_cheats;
+    active_cheats.reserve(cheats.size());
+    std::copy_if(cheats.begin(), cheats.end(), std::back_inserter(active_cheats),
+                 [&active_build_id](const FileSys::CheatPatch& cheat) {
+                     return active_build_id.empty() || cheat.build_id == active_build_id;
+                 });
+
     jobjectArray jpatchArray =
-        env->NewObjectArray(cheats.size(), Common::Android::GetPatchClass(), nullptr);
+        env->NewObjectArray(active_cheats.size(), Common::Android::GetPatchClass(), nullptr);
     int i = 0;
-    for (const auto& cheat : cheats) {
+    for (const auto& cheat : active_cheats) {
         const auto jname = Common::Android::ToJString(env, cheat.name);
         const auto jversion = Common::Android::ToJString(env, fmt::format("Cheat {}", cheat.build_id));
         const auto jpatchProgramId = Common::Android::ToJString(env, std::to_string(program_id));
@@ -927,7 +946,7 @@ jboolean Java_org_citron_citron_1emu_NativeLibrary_reloadCheats(JNIEnv* env, job
     const auto program_id = EmulationSession::GetProgramId(env, jprogramId);
     const FileSys::PatchManager pm{program_id, system.GetFileSystemController(),
                                    system.GetContentProvider()};
-    cheat_engine->Reload(pm.CreateCheatList(system.GetApplicationProcessBuildID()));
+    cheat_engine->Reload(pm.CreateCheatList(cheat_engine->GetBuildId()));
     return true;
 }
 
