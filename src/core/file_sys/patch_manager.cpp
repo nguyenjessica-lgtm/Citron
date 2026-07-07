@@ -236,6 +236,58 @@ std::vector<VirtualDir> GetCheatModsList(
 bool IsDirValidAndNonEmpty(const VirtualDir& dir) {
     return dir != nullptr && (!dir->GetFiles().empty() || !dir->GetSubdirectories().empty());
 }
+
+void AppendCheatsFromMod(std::vector<CheatPatch>& out, const VirtualDir& mod_dir) {
+    const auto cheats_dir = FindSubdirectoryCaseless(mod_dir, "cheats");
+    if (cheats_dir == nullptr) {
+        return;
+    }
+
+    const Core::Memory::TextCheatParser parser;
+    auto files = cheats_dir->GetFiles();
+    std::sort(files.begin(), files.end(), [](const VirtualFile& l, const VirtualFile& r) {
+        return l->GetName() < r->GetName();
+    });
+
+    for (const auto& file : files) {
+        if (file->GetExtension() != "txt") {
+            continue;
+        }
+
+        auto build_id = file->GetName();
+        const auto extension_pos = build_id.find_last_of('.');
+        if (extension_pos != std::string::npos) {
+            build_id = build_id.substr(0, extension_pos);
+        }
+        if (build_id.size() < CHEAT_BUILD_ID_LENGTH) {
+            continue;
+        }
+        build_id = NormalizeCheatBuildId(build_id.substr(0, CHEAT_BUILD_ID_LENGTH));
+
+        std::vector<u8> data(file->GetSize());
+        if (file->Read(data.data(), data.size()) != data.size()) {
+            LOG_INFO(Common_Filesystem, "Failed to read cheats file, build_id={}", build_id);
+            continue;
+        }
+
+        auto cheats =
+            parser.Parse(std::string_view(reinterpret_cast<const char*>(data.data()), data.size()));
+        ApplyDisabledCheats(cheats, build_id);
+        for (const auto& cheat : cheats) {
+            if (cheat.definition.num_opcodes == 0) {
+                continue;
+            }
+
+            const auto cheat_name = GetCheatName(cheat);
+            if (cheat_name.empty()) {
+                continue;
+            }
+
+            out.push_back(
+                {.enabled = cheat.enabled, .name = cheat_name, .build_id = build_id});
+        }
+    }
+}
 } // Anonymous namespace
 
 std::string NormalizeCheatBuildId(std::string build_id) {
@@ -955,61 +1007,24 @@ std::vector<CheatPatch> PatchManager::GetCheats() const {
               [](const VirtualDir& l, const VirtualDir& r) { return l->GetName() < r->GetName(); });
 
     std::vector<CheatPatch> out;
-    const Core::Memory::TextCheatParser parser;
     for (const auto& subdir : patch_dirs) {
-        const auto cheats_dir = FindSubdirectoryCaseless(subdir, "cheats");
-        if (cheats_dir == nullptr) {
-            continue;
-        }
-
-        auto files = cheats_dir->GetFiles();
-        std::sort(files.begin(), files.end(), [](const VirtualFile& l, const VirtualFile& r) {
-            return l->GetName() < r->GetName();
-        });
-
-        for (const auto& file : files) {
-            if (file->GetExtension() != "txt") {
-                continue;
-            }
-
-            auto build_id = file->GetName();
-            const auto extension_pos = build_id.find_last_of('.');
-            if (extension_pos != std::string::npos) {
-                build_id = build_id.substr(0, extension_pos);
-            }
-            if (build_id.size() < CHEAT_BUILD_ID_LENGTH) {
-                continue;
-            }
-            build_id = NormalizeCheatBuildId(build_id.substr(0, CHEAT_BUILD_ID_LENGTH));
-
-            std::vector<u8> data(file->GetSize());
-            if (file->Read(data.data(), data.size()) != data.size()) {
-                LOG_INFO(Common_Filesystem,
-                         "Failed to read cheats file for title_id={:016X}, build_id={}", title_id,
-                         build_id);
-                continue;
-            }
-
-            auto cheats =
-                parser.Parse(std::string_view(reinterpret_cast<const char*>(data.data()), data.size()));
-            ApplyDisabledCheats(cheats, build_id);
-            for (const auto& cheat : cheats) {
-                if (cheat.definition.num_opcodes == 0) {
-                    continue;
-                }
-
-                const auto cheat_name = GetCheatName(cheat);
-                if (cheat_name.empty()) {
-                    continue;
-                }
-
-                out.push_back({.enabled = cheat.enabled,
-                               .name = cheat_name,
-                               .build_id = build_id});
-            }
-        }
+        AppendCheatsFromMod(out, subdir);
     }
 
+    return out;
+}
+
+std::vector<CheatPatch> PatchManager::GetCheatsForMod(std::string_view mod_name) const {
+    std::vector<CheatPatch> out;
+    const auto load_dir = fs_controller.GetModificationLoadRoot(title_id);
+    if (!load_dir) {
+        return out;
+    }
+
+    const auto mod_dir = load_dir->GetSubdirectory(mod_name);
+    if (mod_dir != nullptr) {
+        AppendCheatsFromMod(out, mod_dir);
+    }
     return out;
 }
 

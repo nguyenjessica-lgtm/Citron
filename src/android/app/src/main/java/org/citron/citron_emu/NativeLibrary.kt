@@ -419,6 +419,14 @@ object NativeLibrary {
     external fun setCheatEnabled(buildId: String, name: String, enabled: Boolean)
 
     /**
+     * Initializes all cheats in an installed addon as disabled.
+     *
+     * @param programId String representation of a game's program ID
+     * @param addonName Name of the installed addon directory
+     */
+    external fun disableCheatsForAddon(programId: String, addonName: String)
+
+    /**
      * Reloads cheats for the currently running game, if a cheat engine is active.
      *
      * @param programId String representation of a game's program ID

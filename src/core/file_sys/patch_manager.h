@@ -9,6 +9,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include "common/common_types.h"
 #include "core/file_sys/nca_metadata.h"
 #include "core/file_sys/vfs/vfs_types.h"
@@ -90,8 +91,11 @@ public:
     // Returns a vector of patches
     [[nodiscard]] std::vector<Patch> GetPatches(VirtualFile update_raw = nullptr) const;
 
-    // Returns a vector of cheats found in enabled mod directories.
+    // Returns a vector of cheats found in mod directories.
     [[nodiscard]] std::vector<CheatPatch> GetCheats() const;
+
+    // Returns a vector of cheats found in one installed mod directory.
+    [[nodiscard]] std::vector<CheatPatch> GetCheatsForMod(std::string_view mod_name) const;
 
     // If the game update exists, returns the u32 version field in its Meta-type NCA. If that fails,
     // it will fallback to the Meta-type NCA of the base game. If that fails, the result will be

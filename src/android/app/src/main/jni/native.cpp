@@ -920,6 +920,20 @@ void Java_org_citron_citron_1emu_NativeLibrary_setCheatEnabled(JNIEnv* env, jobj
     }
 }
 
+void Java_org_citron_citron_1emu_NativeLibrary_disableCheatsForAddon(JNIEnv* env, jobject jobj,
+                                                                  jstring jprogramId,
+                                                                  jstring jaddonName) {
+    auto& system = EmulationSession::GetInstance().System();
+    const auto program_id = EmulationSession::GetProgramId(env, jprogramId);
+    const auto addon_name = Common::Android::GetJString(env, jaddonName);
+    const FileSys::PatchManager pm{program_id, system.GetFileSystemController(),
+                                   system.GetContentProvider()};
+
+    for (const auto& cheat : pm.GetCheatsForMod(addon_name)) {
+        Settings::values.disabled_cheats[cheat.build_id].insert(cheat.name);
+    }
+}
+
 jboolean Java_org_citron_citron_1emu_NativeLibrary_reloadCheats(JNIEnv* env, jobject jobj,
                                                             jstring jprogramId) {
     auto& system = EmulationSession::GetInstance().System();
