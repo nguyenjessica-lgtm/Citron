@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include <array>
 #include <map>
 #include <memory>
 #include <optional>
@@ -43,6 +44,9 @@ struct CheatPatch {
     std::string name;
     std::string build_id;
 };
+
+[[nodiscard]] std::string NormalizeCheatBuildId(std::string build_id);
+[[nodiscard]] std::string GetCheatBuildId(const std::array<u8, 0x20>& build_id);
 
 // A centralized class to manage patches to games.
 class PatchManager {

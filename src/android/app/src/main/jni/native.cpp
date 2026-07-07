@@ -3,9 +3,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <algorithm>
-#include <array>
 #include <codecvt>
-#include <cctype>
 #include <locale>
 #include <string>
 #include <string_view>
@@ -31,7 +29,6 @@
 #include "common/detached_tasks.h"
 #include "common/dynamic_library.h"
 #include "common/fs/path_util.h"
-#include "common/hex_util.h"
 #include "common/logging.h"
 #include "common/logging.h"
 #include "common/scm_rev.h"
@@ -83,20 +80,6 @@
 
 #define jconst [[maybe_unused]] const auto
 #define jauto [[maybe_unused]] auto
-
-namespace {
-constexpr std::size_t CHEAT_BUILD_ID_LENGTH = sizeof(u64) * 2;
-
-std::string NormalizeCheatBuildId(std::string build_id) {
-    std::transform(build_id.begin(), build_id.end(), build_id.begin(),
-                   [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
-    return build_id;
-}
-
-std::string GetCheatBuildId(const std::array<u8, 0x20>& build_id) {
-    return NormalizeCheatBuildId(Common::HexToString(build_id).substr(0, CHEAT_BUILD_ID_LENGTH));
-}
-} // namespace
 
 static EmulationSession s_instance;
 
@@ -880,8 +863,9 @@ jobjectArray Java_org_citron_citron_1emu_NativeLibrary_getCheatsForFile(JNIEnv* 
     const FileSys::PatchManager pm{program_id, system.GetFileSystemController(),
                                    system.GetContentProvider()};
     const auto* cheat_engine = system.GetCheatEngine();
-    const auto active_build_id =
-        cheat_engine == nullptr ? std::string{} : GetCheatBuildId(cheat_engine->GetBuildId());
+    const auto active_build_id = cheat_engine == nullptr
+                                     ? std::string{}
+                                     : FileSys::GetCheatBuildId(cheat_engine->GetBuildId());
 
     const auto cheats = pm.GetCheats();
     std::vector<FileSys::CheatPatch> active_cheats;
@@ -917,7 +901,8 @@ jobjectArray Java_org_citron_citron_1emu_NativeLibrary_getCheatsForFile(JNIEnv* 
 void Java_org_citron_citron_1emu_NativeLibrary_setCheatEnabled(JNIEnv* env, jobject jobj,
                                                            jstring jbuildId, jstring jname,
                                                            jboolean jenabled) {
-    const auto build_id = NormalizeCheatBuildId(Common::Android::GetJString(env, jbuildId));
+    const auto build_id =
+        FileSys::NormalizeCheatBuildId(Common::Android::GetJString(env, jbuildId));
     const auto name = Common::Android::GetJString(env, jname);
 
     if (build_id.empty() || name.empty()) {

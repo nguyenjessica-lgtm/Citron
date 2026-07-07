@@ -119,16 +119,6 @@ std::optional<std::vector<Core::Memory::CheatEntry>> ReadCheatFileFromFolder(
     return parser.Parse(std::string_view(reinterpret_cast<const char*>(data.data()), data.size()));
 }
 
-std::string NormalizeCheatBuildId(std::string build_id) {
-    std::transform(build_id.begin(), build_id.end(), build_id.begin(),
-                   [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
-    return build_id;
-}
-
-std::string GetCheatBuildId(const PatchManager::BuildID& build_id) {
-    return NormalizeCheatBuildId(Common::HexToString(build_id).substr(0, CHEAT_BUILD_ID_LENGTH));
-}
-
 std::string GetCheatName(const Core::Memory::CheatEntry& cheat) {
     const auto& name = cheat.definition.readable_name;
     const auto end = std::find(name.cbegin(), name.cend(), '\0');
@@ -247,6 +237,16 @@ bool IsDirValidAndNonEmpty(const VirtualDir& dir) {
     return dir != nullptr && (!dir->GetFiles().empty() || !dir->GetSubdirectories().empty());
 }
 } // Anonymous namespace
+
+std::string NormalizeCheatBuildId(std::string build_id) {
+    std::transform(build_id.begin(), build_id.end(), build_id.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
+    return build_id;
+}
+
+std::string GetCheatBuildId(const std::array<u8, 0x20>& build_id) {
+    return NormalizeCheatBuildId(Common::HexToString(build_id).substr(0, CHEAT_BUILD_ID_LENGTH));
+}
 
 
 
