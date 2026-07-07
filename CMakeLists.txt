@@ -9,6 +9,14 @@ set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 
 project(citron)
 
+# clang-cl + Ninja needs an explicit generic ASM rule for .s/.S sources.
+if(CITRON_CLANGCL AND CMAKE_GENERATOR MATCHES "Ninja")
+    set(CMAKE_ASM_SOURCE_FILE_EXTENSIONS "s;S")
+    set(CMAKE_INCLUDE_FLAG_ASM "/I")
+    set(CMAKE_ASM_COMPILE_OBJECT
+        "<CMAKE_ASM_COMPILER> <DEFINES> <INCLUDES> <FLAGS> /c <SOURCE> /Fo<OBJECT>")
+endif()
+
 # Define the build type, defaulting to "Nightly" for development and CI builds.
 set(CITRON_BUILD_TYPE "Stable" CACHE STRING "The build type for the emulator (e.g., Stable, Nightly)")
 
@@ -91,6 +99,14 @@ CMAKE_DEPENDENT_OPTION(CITRON_CRASH_DUMPS "Compile crash dump (Minidump) support
 # vcpkg is supported primarily for native MSVC and Android builds.
 option(CITRON_USE_BUNDLED_VCPKG "Use vcpkg for citron dependencies" "${MSVC}")
 option(CITRON_USE_CPM "Use CPM.cmake to fetch dependencies" OFF)
+option(CITRON_CLANGCL "Build natively on Windows with clang-cl and the MSVC ABI" OFF)
+
+# Avoid per-project /MP oversubscription under MSBuild.
+if(CITRON_CLANGCL AND MSVC AND CMAKE_GENERATOR MATCHES "Visual Studio")
+    list(APPEND CMAKE_VS_GLOBALS
+        "UseMultiToolTask=true"
+        "EnforceProcessCountAcrossBuilds=true")
+endif()
 
 option(CITRON_CHECK_SUBMODULES "Check if submodules are present" ON)
 
@@ -388,7 +404,10 @@ if (NOT CITRON_USE_EXTERNAL_VULKAN_UTILITY_LIBRARIES)
 endif()
 
 if (ENABLE_LIBUSB AND NOT ${CMAKE_SYSTEM_NAME} STREQUAL "FreeBSD")
-    find_package(libusb 1.0.24 MODULE)
+    # Avoid MinGW libusb archives in MSVC ABI builds.
+    if(NOT CITRON_CLANGCL)
+        find_package(libusb 1.0.24 MODULE)
+    endif()
 endif()
 
 if (ARCHITECTURE_x86 OR ARCHITECTURE_x86_64)
@@ -862,7 +881,7 @@ if (MSVC AND CMAKE_GENERATOR STREQUAL "Ninja")
     )
 endif()
 
-if (NOT APPLE AND (CMAKE_CXX_COMPILER_ID MATCHES "Clang" OR (CITRON_USE_FASTER_LD AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")))
+if (NOT APPLE AND NOT MSVC AND (CMAKE_CXX_COMPILER_ID MATCHES "Clang" OR (CITRON_USE_FASTER_LD AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")))
     # We will assume that if the compiler is GCC, it will attempt to use ld.bfd by default.
     # Try to pick a faster linker.
     find_program(LLD lld)
@@ -897,6 +916,12 @@ if(MSVC)
 endif()
 
 add_subdirectory(src)
+
+# Build all shipped executables in one graph.
+if(CITRON_CLANGCL)
+    add_custom_target(citron-runtime
+        DEPENDS citron citron-cmd citron-room)
+endif()
 
 # Add the compile definition for Dynarmic
 if(CITRON_HAS_DYNARMIC) # This variable is set by the find_package call at the top

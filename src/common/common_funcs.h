@@ -43,7 +43,11 @@
 
 #else // _MSC_VER
 
+#if defined(_MSC_VER) && defined(__clang__)
+#define LTO_NOINLINE __declspec(noinline)
+#else
 #define LTO_NOINLINE
+#endif
 
 // Locale Cross-Compatibility
 #define locale_t _locale_t

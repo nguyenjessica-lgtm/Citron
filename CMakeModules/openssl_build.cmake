@@ -61,7 +61,22 @@ set(_OPENSSL_AR     "${CMAKE_AR}")
 set(_OPENSSL_RANLIB "${CMAKE_RANLIB}")
 set(_OPENSSL_RC     "${CMAKE_RC_COMPILER}")
 
-if (CMAKE_CROSSCOMPILING AND CMAKE_C_COMPILER MATCHES "x86_64-w64-mingw32")
+set(_OPENSSL_BUILD_TOOL make)
+set(_OPENSSL_PARALLEL_ARGS "-j${_NPROC}")
+set(_OPENSSL_SSL_NAME "libssl.a")
+set(_OPENSSL_CRYPTO_NAME "libcrypto.a")
+
+if (WIN32 AND MSVC AND CMAKE_C_COMPILER_ID MATCHES "Clang")
+    set(_OPENSSL_TARGET "VC-WIN64A")
+    set(_OPENSSL_CC "clang-cl")
+    set(_OPENSSL_AR "llvm-lib")
+    set(_OPENSSL_RANLIB "")
+    set(_OPENSSL_RC "rc")
+    set(_OPENSSL_BUILD_TOOL nmake)
+    set(_OPENSSL_PARALLEL_ARGS "")
+    set(_OPENSSL_SSL_NAME "libssl.lib")
+    set(_OPENSSL_CRYPTO_NAME "libcrypto.lib")
+elseif (CMAKE_CROSSCOMPILING AND CMAKE_C_COMPILER MATCHES "x86_64-w64-mingw32")
     # Case 2: Linux → Windows cross-compile with llvm-mingw.
     set(_OPENSSL_TARGET "mingw64")
     set(_OPENSSL_CROSS  "x86_64-w64-mingw32-")
@@ -89,7 +104,7 @@ endif()
 function(_citron_detect_openssl_libdir out_var)
     set(_detected "")
     foreach(_candidate_libdir lib64 lib)
-        if (EXISTS "${_OPENSSL_INSTALL}/${_candidate_libdir}/libssl.a")
+        if (EXISTS "${_OPENSSL_INSTALL}/${_candidate_libdir}/${_OPENSSL_SSL_NAME}")
             set(_detected "${_candidate_libdir}")
             break()
         endif()
@@ -106,8 +121,8 @@ function(_citron_publish_openssl_imports)
 
     set(OPENSSL_ROOT_DIR     "${_OPENSSL_INSTALL}" CACHE PATH     "" FORCE)
     set(OPENSSL_INCLUDE_DIR  "${_OPENSSL_INSTALL}/include" CACHE PATH "" FORCE)
-    set(OPENSSL_SSL_LIBRARY  "${_OPENSSL_INSTALL}/${_OPENSSL_PUBLISH_LIBDIR}/libssl.a"    CACHE FILEPATH "" FORCE)
-    set(OPENSSL_CRYPTO_LIBRARY "${_OPENSSL_INSTALL}/${_OPENSSL_PUBLISH_LIBDIR}/libcrypto.a" CACHE FILEPATH "" FORCE)
+    set(OPENSSL_SSL_LIBRARY  "${_OPENSSL_INSTALL}/${_OPENSSL_PUBLISH_LIBDIR}/${_OPENSSL_SSL_NAME}" CACHE FILEPATH "" FORCE)
+    set(OPENSSL_CRYPTO_LIBRARY "${_OPENSSL_INSTALL}/${_OPENSSL_PUBLISH_LIBDIR}/${_OPENSSL_CRYPTO_NAME}" CACHE FILEPATH "" FORCE)
     set(OPENSSL_FOUND TRUE CACHE BOOL "" FORCE)
 
     # Platform-specific link requirements:
@@ -191,7 +206,11 @@ if (NOT openssl_src_ADDED)
 endif()
 
 # ── Build from source ────────────────────────────────────────────────────────
-find_program(_PERL perl REQUIRED)
+if (PERL_EXECUTABLE)
+    set(_PERL "${PERL_EXECUTABLE}")
+else()
+    find_program(_PERL perl REQUIRED)
+endif()
 if (NOT _PERL)
     message(FATAL_ERROR "[OpenSSL] Perl is required to build OpenSSL from source")
 endif()
@@ -213,6 +232,10 @@ set(_openssl_env_path "$ENV{PATH}")
 if (_OPENSSL_CROSS)
     get_filename_component(_openssl_tool_dir "${CMAKE_C_COMPILER}" DIRECTORY)
     set(_openssl_env_path "${_openssl_tool_dir}:$ENV{PATH}")
+endif()
+if (WIN32 AND MSVC AND _OPENSSL_NASM)
+    get_filename_component(_openssl_nasm_dir "${_OPENSSL_NASM}" DIRECTORY)
+    set(_openssl_env_path "${_openssl_nasm_dir};${_openssl_env_path}")
 endif()
 
 # Determine what we are building for (for the status message).
@@ -267,11 +290,10 @@ set(_OPENSSL_CONFIGURE_ARGS
 if (_OPENSSL_CROSS)
     list(APPEND _OPENSSL_CONFIGURE_ARGS "--cross-compile-prefix=${_OPENSSL_CROSS}")
 endif()
-list(APPEND _OPENSSL_CONFIGURE_ARGS
-    "CC=${_OPENSSL_CC}"
-    "AR=${_OPENSSL_AR}"
-    "RANLIB=${_OPENSSL_RANLIB}"
-)
+list(APPEND _OPENSSL_CONFIGURE_ARGS "CC=${_OPENSSL_CC}" "AR=${_OPENSSL_AR}")
+if (_OPENSSL_RANLIB)
+    list(APPEND _OPENSSL_CONFIGURE_ARGS "RANLIB=${_OPENSSL_RANLIB}")
+endif()
 if (_OPENSSL_RC)
     list(APPEND _OPENSSL_CONFIGURE_ARGS "RC=${_OPENSSL_RC}")
 endif()
@@ -296,10 +318,13 @@ ProcessorCount(_NPROC)
 if (_NPROC EQUAL 0)
     set(_NPROC 4)
 endif()
+if (_OPENSSL_BUILD_TOOL STREQUAL "make")
+    set(_OPENSSL_PARALLEL_ARGS "-j${_NPROC}")
+endif()
 
 execute_process(
     COMMAND ${CMAKE_COMMAND} -E env "PATH=${_openssl_env_path}"
-        make -j${_NPROC} build_libs
+        ${_OPENSSL_BUILD_TOOL} ${_OPENSSL_PARALLEL_ARGS} build_libs
     WORKING_DIRECTORY "${_OPENSSL_BUILD_DIR}"
     RESULT_VARIABLE _ssl_build_result
     OUTPUT_QUIET
@@ -309,9 +334,15 @@ if (NOT _ssl_build_result EQUAL 0)
     message(FATAL_ERROR "[OpenSSL] Build failed (exit ${_ssl_build_result}).")
 endif()
 
+# VC install expects this file even when clang-cl does not emit it.
+if (_OPENSSL_BUILD_TOOL STREQUAL "nmake" AND
+    NOT EXISTS "${_OPENSSL_BUILD_DIR}/ossl_static.pdb")
+    file(TOUCH "${_OPENSSL_BUILD_DIR}/ossl_static.pdb")
+endif()
+
 execute_process(
     COMMAND ${CMAKE_COMMAND} -E env "PATH=${_openssl_env_path}"
-        make install_sw
+        ${_OPENSSL_BUILD_TOOL} install_sw
     WORKING_DIRECTORY "${_OPENSSL_BUILD_DIR}"
     RESULT_VARIABLE _ssl_install_result
     OUTPUT_QUIET

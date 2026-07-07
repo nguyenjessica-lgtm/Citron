@@ -317,6 +317,9 @@ add_executable(citron
     citron.rc
 )
 
+# Qt AUTOGEN/RCC sources are not unity-safe.
+set_property(TARGET citron PROPERTY UNITY_BUILD OFF)
+
 set_source_files_properties(controller_overlay.cpp PROPERTIES SKIP_AUTOUIC ON)
 
 if (CITRON_CRASH_DUMPS)

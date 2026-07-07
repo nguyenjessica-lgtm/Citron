@@ -146,13 +146,17 @@
 #   Options:
 #     --source DIR             Path to citron source tree (default: cwd)
 #     --build DIR              Path to build directory (default: ./build)
+#     --compiler llvm-mingw|clang-cl
+#                              Toolchain mode (default: llvm-mingw). Also selects
+#                              compiler-specific prerequisites during setup.
 #     --jobs N                 Parallel jobs (default: nproc)
 #     --lto thin|full|none     LTO mode (default: full)
 #                              MUST match between generate, csgenerate, and use.
 #                              Only propeller/bolt (final relink) may differ.
 #     --lite-lto               Alias for --lto thin
 #     --no-lto                 Alias for --lto none
-#     --pgo-type ir|fe|none    PGO instrumentation mode (default: ir)
+#     --pgo-type ir|fe|none
+#                              PGO instrumentation mode (default: ir).
 #                              ir   = LLVM IR PGO (-fprofile-generate / -fprofile-use).
 #                                     Counters at the optimized-IR level. More accurate
 #                                     for inlining decisions. Required for CS-IRPGO.
@@ -169,6 +173,7 @@
 #                                       ./build-clangtron-windows.sh use --pgo none --lto none
 #                              MUST match between generate, csgenerate, and use
 #                              (except none, which skips profdata entirely).
+#     --release                Release build (default).
 #     --unity                  Enable unity builds (passes ENABLE_UNITY_BUILD=ON)
 #                              ~30-90% faster compilation; no runtime effect.
 #     --clang-version N        Host Clang version (default: 21)
@@ -268,6 +273,8 @@ set -euo pipefail
 # =============================================================================
 
 CLANG_VERSION="${CLANG_VERSION:-21}"
+COMPILER_MODE="${COMPILER_MODE:-llvm-mingw}"
+VS_INSTALL_PATH="${VS_INSTALL_PATH:-}"
 
 
 # llvm-mingw release tag — cross-compilation toolchain (Clang+libc++/compiler-rt)
@@ -653,8 +660,98 @@ build_bolt_from_source() {
 # =============================================================================
 # Stage: setup
 # =============================================================================
+stage_setup_clangcl() {
+    header "Setting Up Native clang-cl Build Environment"
+    [[ "${_HOST_OS}" == "windows" ]] ||
+        error "--compiler clang-cl setup requires a native Windows/MSYS2 host."
+    command -v pacman &>/dev/null ||
+        error "pacman not found. Launch the MSYS2 CLANG64 terminal and re-run setup."
+
+    info "Installing MSYS2 shell and assembler prerequisites..."
+    pacman -S --needed --noconfirm base-devel git curl wget \
+        mingw-w64-clang-x86_64-nasm mingw-w64-clang-x86_64-yasm \
+        mingw-w64-clang-x86_64-glslang mingw-w64-clang-x86_64-ninja \
+        mingw-w64-clang-x86_64-sccache \
+        2>/dev/null || error "Failed to install required MSYS2 packages."
+
+    local winget
+    winget="$(command -v winget.exe 2>/dev/null || true)"
+    if [[ -z "${winget}" && -n "${LOCALAPPDATA:-}" ]]; then
+        local winget_candidate
+        winget_candidate="$(cygpath -au "${LOCALAPPDATA}")/Microsoft/WindowsApps/winget.exe"
+        [[ -x "${winget_candidate}" ]] && winget="${winget_candidate}"
+    fi
+    [[ -n "${winget}" ]] ||
+        error "winget.exe not found. Install Microsoft App Installer, then re-run setup."
+    winget_install() {
+        local id="$1"
+        info "Ensuring ${id} is installed..."
+        "${winget}" install --id "${id}" --exact --silent \
+            --accept-package-agreements --accept-source-agreements \
+            || warn "winget could not install ${id}; it may already be installed."
+    }
+
+    [[ -x /c/Strawberry/perl/bin/perl.exe ]] || winget_install StrawberryPerl.StrawberryPerl
+    local setup_python=""
+    for setup_python_candidate in /c/Python312/python.exe \
+        /c/hostedtoolcache/windows/Python/3.12.*/x64/python.exe \
+        /c/Users/*/AppData/Local/Programs/Python/Python312/python.exe; do
+        if [[ -x "${setup_python_candidate}" ]]; then
+            setup_python="${setup_python_candidate}"
+            break
+        fi
+    done
+    [[ -n "${setup_python}" ]] || winget_install Python.Python.3.12
+    if [[ -z "${setup_python}" ]]; then
+        for setup_python_candidate in /c/Python312/python.exe \
+            /c/Users/*/AppData/Local/Programs/Python/Python312/python.exe; do
+            if [[ -x "${setup_python_candidate}" ]]; then
+                setup_python="${setup_python_candidate}"
+                break
+            fi
+        done
+    fi
+    [[ -x "/c/Program Files/CMake/bin/cmake.exe" ]] || winget_install Kitware.CMake
+    [[ -x "/c/Program Files/Git/cmd/git.exe" ]] || winget_install Git.Git
+
+    local vswhere="/c/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe"
+    [[ -x "${vswhere}" ]] ||
+        error "Visual Studio Installer/vswhere missing. Install Visual Studio 2022 first."
+    local vs_install
+    vs_install="$("${vswhere}" -latest -products '*' \
+        -requires Microsoft.VisualStudio.Component.VC.Llvm.Clang \
+        -property installationPath | tr -d '\r')"
+    [[ -n "${vs_install}" ]] ||
+        error "Visual Studio clang-cl component missing. Add Desktop development with C++, C++ Clang tools for Windows, and Windows 11 SDK."
+
+    local vs_unix ok=1
+    vs_unix="$(cygpath -au "${vs_install}")"
+    for tool in \
+        "${vs_unix}/VC/Tools/Llvm/x64/bin/clang-cl.exe" \
+        "${vs_unix}/VC/Tools/Llvm/x64/bin/lld-link.exe" \
+        "${vs_unix}/VC/Tools/Llvm/x64/bin/llvm-profdata.exe" \
+        "/c/Strawberry/perl/bin/perl.exe" "${setup_python}" \
+        "/c/Program Files/CMake/bin/cmake.exe" "/c/Program Files/Git/cmd/git.exe" \
+        "/clang64/bin/nasm.exe" "/clang64/bin/ninja.exe" \
+        "/clang64/bin/sccache.exe"; do
+        if [[ -x "${tool}" ]]; then
+            success "  ${tool}"
+        else
+            warn "  NOT FOUND: ${tool}"
+            ok=0
+        fi
+    done
+    [[ "${ok}" -eq 1 ]] ||
+        error "clang-cl setup incomplete. Restart MSYS2 after installs, then rerun setup."
+    success "Native clang-cl build environment ready."
+}
+
 stage_setup() {
     header "Setting Up Build Environment"
+    if [[ "${COMPILER_MODE}" == "clang-cl" ]]; then
+        stage_setup_clangcl
+        return
+    fi
 
     # ── MSYS2/Windows path ────────────────────────────────────────────────────
     if [[ "${_HOST_OS}" == "windows" ]]; then
@@ -4595,6 +4692,291 @@ stage_clean() {
     success "Build directories removed."
 }
 
+print_clangcl_stage_guidance() {
+    local stage_name="$1"
+    local binary="$2"
+    local config="$3"
+    local profile_win
+    profile_win="$(cygpath -am "${PROFILE_DIR}")"
+    local args="--compiler clang-cl --pgo ${PGO_MODE} --lto ${LTO_MODE} --build \"${BUILD_ROOT}\""
+    [[ "${UNITY_BUILD}" == "ON" ]] && args="${args} --unity"
+    [[ "${BUILD_TYPE}" == "RelWithDebInfo" ]] && args="${args} --relwithdebinfo"
+
+    echo ""
+    if [[ "${stage_name}" == "use" ]]; then
+        echo -e "${GREEN}================================================================${RESET}"
+        echo -e "${GREEN}  Stage use complete (native Windows clang-cl)${RESET}"
+        echo -e "${GREEN}================================================================${RESET}"
+        echo ""
+        echo -e "  ${BOLD}Binary  :${RESET} ${binary}"
+        echo -e "  ${BOLD}Config  :${RESET} ${config}"
+        echo -e "  ${BOLD}PGO     :${RESET} ${PGO_MODE}"
+        echo -e "  ${BOLD}LTO     :${RESET} ${LTO_MODE}"
+        echo -e "  ${BOLD}Artifacts:${RESET} ${binary%/*}/"
+        echo ""
+        echo "  Validate runtime deps, startup, gameplay, and clean shutdown."
+        echo -e "${GREEN}================================================================${RESET}"
+        echo ""
+        return
+    fi
+
+    local session profile_pattern next_title
+    if [[ "${stage_name}" == "generate" ]]; then
+        session="Session 1"
+        profile_pattern="citron-generate-%p.profraw"
+        next_title="Build optimized binary"
+    else
+        session="Session 2 (context-sensitive IR)"
+        profile_pattern="citron-csgenerate-%p.profraw"
+        next_title="Merge stage1 + CS profiles and rebuild"
+    fi
+
+    echo -e "${YELLOW}================================================================${RESET}"
+    echo -e "${YELLOW}  NEXT STEP: Collect Profile Data (${session})${RESET}"
+    echo -e "${YELLOW}================================================================${RESET}"
+    echo ""
+    echo -e "  ${BOLD}Instrumented binary:${RESET} ${binary}"
+    echo -e "  ${BOLD}Profile output dir :${RESET} ${profile_win}/"
+    echo ""
+    echo "  1. In PowerShell, set the profile destination and launch Citron:"
+    echo "       \$env:LLVM_PROFILE_FILE='${profile_win}/${profile_pattern}'"
+    echo "       & '${binary}'"
+    echo ""
+    echo "  2. Exercise games and menus for 15-30 minutes."
+    echo "     Exit cleanly via File > Exit or Ctrl+Q; do not kill the process."
+    echo ""
+    echo "  3. Confirm ${profile_pattern} files exist under:"
+    echo "       ${profile_win}/"
+    echo ""
+    echo "  4. ${next_title}:"
+    if [[ "${stage_name}" == "generate" && "${PGO_MODE}" == "ir" ]]; then
+        echo "       # Optional CS-IRPGO pass:"
+        echo "       ./build-clangtron-windows.sh csgenerate ${args}"
+        echo "       # Or build directly from stage1 profiles:"
+    fi
+    echo "       ./build-clangtron-windows.sh use ${args}"
+    echo ""
+    echo -e "${YELLOW}================================================================${RESET}"
+    echo ""
+}
+
+stage_clangcl() {
+    [[ "${_HOST_OS}" == "windows" ]] ||
+        error "clang-cl requires a native Windows host."
+    [[ "${STAGE}" == "generate" || "${STAGE}" == "csgenerate" || "${STAGE}" == "use" ]] ||
+        error "clang-cl supports generate, csgenerate, and use stages."
+    [[ "${STAGE}" != "csgenerate" || "${PGO_MODE}" == "ir" ]] ||
+        error "clang-cl csgenerate requires --pgo ir."
+
+    local vswhere="/c/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe"
+    if [[ -z "${VS_INSTALL_PATH}" ]]; then
+        [[ -x "${vswhere}" ]] || error "vswhere.exe not found; install Visual Studio Installer or set VS_INSTALL_PATH."
+        VS_INSTALL_PATH="$("${vswhere}" -latest -products '*' \
+            -requires Microsoft.VisualStudio.Component.VC.Llvm.Clang \
+            -property installationPath | tr -d '\r')"
+    fi
+    [[ -n "${VS_INSTALL_PATH}" ]] || error "No Visual Studio installation with clang-cl found."
+
+    local vs_root vsdev clang_cl llvm_profdata native_perl native_python
+    vs_root="$(cygpath -au "${VS_INSTALL_PATH}")"
+    vsdev="${vs_root}/Common7/Tools/VsDevCmd.bat"
+    clang_cl="${vs_root}/VC/Tools/Llvm/x64/bin/clang-cl.exe"
+    llvm_profdata="${vs_root}/VC/Tools/Llvm/x64/bin/llvm-profdata.exe"
+    [[ -f "${vsdev}" ]] || error "VsDevCmd.bat missing under ${VS_INSTALL_PATH}."
+    [[ -f "${clang_cl}" ]] || error "clang-cl.exe missing under ${VS_INSTALL_PATH}."
+    [[ -f "${llvm_profdata}" ]] || error "llvm-profdata.exe missing beside clang-cl.exe."
+    local perl_candidate
+    native_perl=""
+    for perl_candidate in \
+        "${PERL_EXECUTABLE:-}" \
+        "/c/Strawberry/perl/bin/perl.exe" \
+        "/c/Perl64/bin/perl.exe"; do
+        [[ -n "${perl_candidate}" && -x "${perl_candidate}" ]] || continue
+        if "${perl_candidate}" -e 'exit(($^O eq "MSWin32") ? 0 : 1)'; then
+            native_perl="${perl_candidate}"
+            break
+        fi
+    done
+    [[ -n "${native_perl}" ]] ||
+        error "Native Win32 Perl required for clang-cl OpenSSL. Install Strawberry Perl or set PERL_EXECUTABLE. MSYS/Cygwin Perl is incompatible with VC-WIN64A."
+    local python_candidate
+    native_python=""
+    for python_candidate in \
+        "${PYTHON_EXECUTABLE:-}" \
+        /c/Python312/python.exe \
+        /c/hostedtoolcache/windows/Python/3.12.*/x64/python.exe \
+        /c/Users/*/AppData/Local/Programs/Python/Python312/python.exe; do
+        [[ -x "${python_candidate}" ]] || continue
+        if "${python_candidate}" -c 'import sys; raise SystemExit(sys.platform != "win32")'; then
+            native_python="${python_candidate}"
+            break
+        fi
+    done
+    [[ -n "${native_python}" ]] ||
+        error "Native Windows Python 3.12 required. Run setup --compiler clang-cl or set PYTHON_EXECUTABLE."
+
+    local sccache="/clang64/bin/sccache.exe"
+    local ninja="/clang64/bin/ninja.exe"
+    [[ -x "${ninja}" ]] ||
+        error "ninja.exe missing. Run setup --compiler clang-cl."
+    local sccache_cmake_args="  -DCMAKE_C_COMPILER_LAUNCHER= -DCMAKE_CXX_COMPILER_LAUNCHER= ^"
+    local sccache_start_cmd="rem sccache unavailable" sccache_stats_cmd="rem sccache unavailable"
+    if [[ -x "${sccache}" ]]; then
+        local sccache_win_tmp
+        sccache_win_tmp="$(cygpath -am "${sccache}")"
+        sccache_cmake_args="  -DCMAKE_C_COMPILER_LAUNCHER=\"${sccache_win_tmp}\" -DCMAKE_CXX_COMPILER_LAUNCHER=\"${sccache_win_tmp}\" ^"
+        sccache_start_cmd="set \"SCCACHE_IGNORE_SERVER_IO_ERROR=1\"
+\"${sccache_win_tmp}\" --start-server >NUL 2>&1"
+        sccache_stats_cmd="\"${sccache_win_tmp}\" --show-stats"
+    else
+        warn "sccache.exe missing; clang-cl build will run without compiler cache."
+    fi
+
+    local config="${BUILD_TYPE}" stage_name flags="" config_compile_flags config_link_flags
+    case "${config}" in
+        Release)
+            config_compile_flags="/O2 /DNDEBUG"
+            config_link_flags="/OPT:REF /OPT:ICF"
+            ;;
+        RelWithDebInfo)
+            config_compile_flags="/O2 /Z7 /DNDEBUG"
+            config_link_flags="/DEBUG /OPT:REF /OPT:ICF"
+            ;;
+        Debug)
+            config_compile_flags="/Od /Z7"
+            config_link_flags="/DEBUG"
+            ;;
+        *) error "Unsupported clang-cl build type: ${config}" ;;
+    esac
+    stage_name="${STAGE}"
+    local package_dir="${BUILD_ROOT}/clang-cl/${stage_name}"
+    local build_dir="${BUILD_ROOT}/clang-cl/.work/${stage_name}"
+    mkdir -p "${build_dir}" "${PROFILE_DIR}"
+
+    case "${PGO_MODE}:${STAGE}" in
+        none:use) ;;
+        none:*) error "--pgo none supports only clang-cl use stage." ;;
+        fe:generate) flags="/clang:-fprofile-instr-generate" ;;
+        ir:generate) flags="/clang:-fprofile-generate" ;;
+        fe:use|ir:use)
+            local merged="${PROFILE_DIR}/clang-cl-${PGO_MODE}.profdata"
+            local raw=("${PROFILE_DIR}"/*.profraw)
+            [[ -e "${raw[0]}" ]] || error "No .profraw files in ${PROFILE_DIR}; run instrumented workload first."
+            "${llvm_profdata}" merge -output="${merged}" "${raw[@]}" ||
+                error "llvm-profdata merge failed."
+            if [[ "${PGO_MODE}" == "fe" ]]; then
+                flags="/clang:-fprofile-instr-use=$(cygpath -am "${merged}")"
+            else
+                flags="/clang:-fprofile-use=$(cygpath -am "${merged}")"
+            fi
+            ;;
+        ir:csgenerate)
+            local stage1="${PROFILE_DIR}/clang-cl-ir.profdata"
+            local ir_raw=("${PROFILE_DIR}"/citron-generate-*.profraw)
+            [[ -e "${ir_raw[0]}" ]] || error "No stage-1 .profraw files in ${PROFILE_DIR}."
+            "${llvm_profdata}" merge -output="${stage1}" "${ir_raw[@]}" ||
+                error "llvm-profdata stage-1 merge failed."
+            flags="/clang:-fprofile-use=$(cygpath -am "${stage1}") /clang:-fcs-profile-generate"
+            ;;
+        *) error "Unsupported clang-cl PGO flow: ${PGO_MODE}:${STAGE}" ;;
+    esac
+    case "${LTO_MODE}" in
+        none) ;;
+        thin) flags="${flags} /clang:-flto=thin" ;;
+        full) flags="${flags} /clang:-flto=full" ;;
+    esac
+
+    local source_win build_win package_win build_copy_win package_copy_win batch_win cpm_win vsdev_win perl_win python_win
+    local clang_cl_win clang_bin_win ninja_win
+    source_win="$(cygpath -am "${SOURCE_DIR}")"
+    build_win="$(cygpath -am "${build_dir}")"
+    package_win="$(cygpath -am "${package_dir}")"
+    build_copy_win="$(cygpath -aw "${build_dir}")"
+    package_copy_win="$(cygpath -aw "${package_dir}")"
+    batch_win="$(cygpath -aw "${build_dir}/build-clang-cl.cmd")"
+    cpm_win="$(cygpath -am "${CPM_SOURCE_CACHE}")"
+    vsdev_win="$(cygpath -am "${vsdev}")"
+    perl_win="$(cygpath -am "${native_perl}")"
+    python_win="$(cygpath -am "${native_python}")"
+    clang_cl_win="$(cygpath -am "${clang_cl}")"
+    clang_bin_win="$(cygpath -am "$(dirname "${clang_cl}")")"
+    ninja_win="$(cygpath -am "${ninja}")"
+
+    cat > "${build_dir}/build-clang-cl.cmd" <<CLANGCL_CMD_EOF
+@echo off
+setlocal
+for %%V in (CPATH C_INCLUDE_PATH CPLUS_INCLUDE_PATH CFLAGS CXXFLAGS CPPFLAGS INCLUDE LIB LIBPATH PKG_CONFIG_PATH PKG_CONFIG_LIBDIR) do set "%%V="
+set "PATH=${clang_bin_win};%SystemRoot%\System32;%SystemRoot%;%SystemRoot%\System32\Wbem;C:\Program Files\CMake\bin;C:\Program Files\Git\cmd;C:\Python312;C:\msys64\clang64\bin"
+call "${vsdev_win}" -arch=x64 -host_arch=x64
+if errorlevel 1 exit /b %errorlevel%
+if not defined CPM_SOURCE_CACHE set "CPM_SOURCE_CACHE=${cpm_win}"
+${sccache_start_cmd}
+cmake -S "${source_win}" -B "${build_win}" -G "Ninja Multi-Config" ^
+  -DCMAKE_MAKE_PROGRAM="${ninja_win}" ^
+  -DCMAKE_C_COMPILER="${clang_cl_win}" -DCMAKE_CXX_COMPILER="${clang_cl_win}" ^
+${sccache_cmake_args}
+  -DCMAKE_POLICY_DEFAULT_CMP0141=NEW -DCMAKE_MSVC_DEBUG_INFORMATION_FORMAT="$<$<CONFIG:Debug,RelWithDebInfo>:Embedded>" ^
+  -DCITRON_USE_CPM=ON -DCITRON_USE_BUNDLED_VCPKG=OFF -DCITRON_CHECK_SUBMODULES=OFF ^
+  -DCPM_SOURCE_CACHE="${cpm_win}" ^
+  -DCITRON_CLANGCL=ON -DCITRON_USE_BUNDLED_QT=ON -DCITRON_USE_BUNDLED_FFMPEG=ON ^
+  -DBUILD_TESTING=OFF -DCITRON_TESTS=OFF -DCITRON_SHADER_TOOL=OFF ^
+  -DCITRON_CRASH_DUMPS=OFF ^
+  -DENABLE_UNITY_BUILD=${UNITY_BUILD} ^
+  -DPython3_EXECUTABLE="${python_win}" ^
+  -DPERL_EXECUTABLE="${perl_win}" ^
+  -D_OPENSSL_NASM=C:/msys64/clang64/bin/nasm.exe ^
+  -DGLSLANGVALIDATOR=C:/msys64/clang64/bin/glslangValidator.exe ^
+  -DCITRON_ENABLE_LTO=OFF ^
+  -DCITRON_ENABLE_PGO_GENERATE=OFF -DCITRON_ENABLE_PGO_USE=OFF ^
+  -DCMAKE_C_FLAGS_${config^^}="${config_compile_flags} ${flags}" -DCMAKE_CXX_FLAGS_${config^^}="${config_compile_flags} ${flags}" ^
+  -DCMAKE_EXE_LINKER_FLAGS_${config^^}="${config_link_flags} ${flags}"
+if errorlevel 1 exit /b %errorlevel%
+set "PATH=%PATH%;C:\msys64\usr\bin"
+cmake --build "${build_win}" --config ${config} --parallel ${JOBS} --target citron-runtime
+if not %errorlevel%==0 exit /b 1
+${sccache_stats_cmd}
+if not exist "${package_copy_win}" mkdir "${package_copy_win}"
+for %%F in ("${package_copy_win}\\*") do if exist "%%F" del /F /Q "%%F"
+for /D %%D in ("${package_copy_win}\\*") do if /I not "%%~nxD"=="user" if exist "%%D" rmdir /S /Q "%%D"
+if not exist "${package_copy_win}\\user" mkdir "${package_copy_win}\\user"
+copy /Y "${build_copy_win}\\bin\\${config}\\citron.exe" "${package_copy_win}\\citron.exe" >NUL
+if errorlevel 1 exit /b %errorlevel%
+copy /Y "${build_copy_win}\\bin\\${config}\\citron-cmd.exe" "${package_copy_win}\\citron-cmd.exe" >NUL
+if errorlevel 1 exit /b %errorlevel%
+copy /Y "${build_copy_win}\\bin\\${config}\\citron-room.exe" "${package_copy_win}\\citron-room.exe" >NUL
+if errorlevel 1 exit /b %errorlevel%
+if exist "${build_copy_win}\\bin\\${config}\\*.dll" (
+  copy /Y "${build_copy_win}\\bin\\${config}\\*.dll" "${package_copy_win}\\" >NUL
+  if errorlevel 1 exit /b %errorlevel%
+)
+if /I "${config}"=="RelWithDebInfo" (
+  for %%P in (citron.pdb citron-cmd.pdb citron-room.pdb) do (
+    if not exist "${build_copy_win}\\bin\\${config}\\%%P" exit /b 1
+    copy /Y "${build_copy_win}\\bin\\${config}\\%%P" "${package_copy_win}\\%%P" >NUL
+  )
+)
+if exist "${build_copy_win}\\bin\\${config}\\qt.conf" (
+  copy /Y "${build_copy_win}\\bin\\${config}\\qt.conf" "${package_copy_win}\\qt.conf" >NUL
+  if errorlevel 1 exit /b %errorlevel%
+)
+for %%D in (iconengines imageformats platforms styles tls) do if exist "${build_copy_win}\\bin\\${config}\\%%D" (
+  xcopy /E /I /Y "${build_copy_win}\\bin\\${config}\\%%D" "${package_copy_win}\\%%D" >NUL
+  if errorlevel 1 exit /b %errorlevel%
+)
+exit /b 0
+CLANGCL_CMD_EOF
+    info "Visual Studio: ${VS_INSTALL_PATH}"
+    info "Compiler: $("${clang_cl}" --version | head -n1)"
+    MSYS2_ARG_CONV_EXCL='*' cmd.exe /D /C "${batch_win}" ||
+        error "clang-cl ${stage_name} build failed."
+    [[ -f "${package_dir}/citron.exe" ]] ||
+        error "clang-cl build returned success but citron.exe is missing."
+    local binary_win
+    binary_win="$(cygpath -am "${package_dir}/citron.exe")"
+    success "clang-cl runtime package: ${package_dir}"
+    print_clangcl_stage_guidance "${stage_name}" "${binary_win}" "${config}"
+}
+
 # =============================================================================
 # Argument parsing
 # =============================================================================
@@ -4639,6 +5021,8 @@ while [[ $# -gt 0 ]]; do
                 ir|fe|none) PGO_MODE="$2"; shift 2 ;;
                 *) echo "[ERROR] --pgo-type requires: ir, fe, or none"; exit 1 ;;
             esac ;;
+        --release)
+            BUILD_TYPE="Release"; shift ;;
         --relwithdebinfo)
             BUILD_TYPE="RelWithDebInfo"; shift ;;
         --unity)
@@ -4655,6 +5039,11 @@ while [[ $# -gt 0 ]]; do
             shift 2 ;;
         --llvm-mingw-version)
             LLVM_MINGW_VERSION="$2"; shift 2 ;;
+        --compiler)
+            case "$2" in
+                llvm-mingw|clang-cl) COMPILER_MODE="$2"; shift 2 ;;
+                *) echo "[ERROR] --compiler requires: llvm-mingw or clang-cl"; exit 1 ;;
+            esac ;;
         --help|-h)
             sed -n '/^# USAGE/,/^# ====/p' "$0"
             exit 0 ;;
@@ -4664,6 +5053,15 @@ while [[ $# -gt 0 ]]; do
 done
 
 [[ -n "$STAGE" ]] || error "No stage specified. Run with --help for usage."
+
+if [[ "${COMPILER_MODE}" == "clang-cl" ]]; then
+    if [[ "${STAGE}" == "setup" ]]; then
+        stage_setup
+        exit 0
+    fi
+    stage_clangcl
+    exit 0
+fi
 
 case "$STAGE" in
     setup)       stage_setup ;;

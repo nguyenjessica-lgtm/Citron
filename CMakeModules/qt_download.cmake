@@ -8,7 +8,8 @@
 # platform.
 #
 # Target variants:
-#   Windows (native or cross-compile target)  →  win64_llvm_mingw
+#   Windows llvm-mingw                       →  win64_llvm_mingw
+#   Windows MSVC/clang-cl                    →  win64_msvc2022_64
 #   Linux native x86-64                       →  linux_gcc_64 (via aqt)
 #   Linux native aarch64                      →  linux_gcc_arm64 (host: linux_arm64)
 #
@@ -56,8 +57,13 @@ endif()
 if (WIN32)
     set(_QT_OS        "windows")
     set(_QT_TARGET    "desktop")
-    set(_QT_ARCH      "win64_llvm_mingw")
-    set(_QT_DIR_NAME  "llvm-mingw_64")
+    if (MSVC)
+        set(_QT_ARCH      "win64_msvc2022_64")
+        set(_QT_DIR_NAME  "msvc2022_64")
+    else()
+        set(_QT_ARCH      "win64_llvm_mingw")
+        set(_QT_DIR_NAME  "llvm-mingw_64")
+    endif()
     set(_QT_CMAKE_SUB "lib/cmake/Qt6")
 else()
     if (APPLE)
