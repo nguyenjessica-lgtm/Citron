@@ -564,6 +564,8 @@
     <string name="emulation_pause">Pause emulation</string>
     <string name="emulation_unpause">Unpause emulation</string>
     <string name="emulation_input_overlay">Overlay options</string>
+    <string name="emulation_cheats">Cheats</string>
+    <string name="emulation_cheats_empty">No cheats are available for this game.</string>
     <string name="touchscreen">Touchscreen</string>
     <string name="lock_drawer">Lock drawer</string>
     <string name="unlock_drawer">Unlock drawer</string>

@@ -9,7 +9,6 @@ import android.view.ViewGroup
 import org.citron.citron_emu.databinding.ListItemAddonBinding
 import org.citron.citron_emu.model.Patch
 import org.citron.citron_emu.model.AddonViewModel
-import org.citron.citron_emu.model.PatchType
 import org.citron.citron_emu.viewholder.AbstractViewHolder
 
 class AddonAdapter(val addonViewModel: AddonViewModel) :
@@ -22,7 +21,6 @@ class AddonAdapter(val addonViewModel: AddonViewModel) :
     inner class AddonViewHolder(val binding: ListItemAddonBinding) :
         AbstractViewHolder<Patch>(binding) {
         override fun bind(model: Patch) {
-            val patchType = PatchType.from(model.type)
             binding.root.setOnClickListener {
                 binding.addonCheckbox.isChecked = !binding.addonCheckbox.isChecked
             }
@@ -31,10 +29,9 @@ class AddonAdapter(val addonViewModel: AddonViewModel) :
             binding.addonCheckbox.setOnCheckedChangeListener(null)
             binding.addonCheckbox.isChecked = model.enabled
             binding.addonCheckbox.setOnCheckedChangeListener { _, checked ->
-                addonViewModel.onPatchEnabledChanged(model, checked)
+                model.enabled = checked
             }
-            binding.buttonDelete.visibility =
-                if (patchType == PatchType.Cheat) View.GONE else View.VISIBLE
+            binding.buttonDelete.visibility = View.VISIBLE
             binding.buttonDelete.setOnClickListener {
                 addonViewModel.setAddonToDelete(model)
             }

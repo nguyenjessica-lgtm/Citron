@@ -46,14 +46,10 @@ class AddonViewModel : ViewModel() {
             try {
                 val patchList = withContext(Dispatchers.IO) {
                     val patchList = (
-                        (NativeLibrary.getPatchesForFile(currentGame.path, currentGame.programId)
-                            ?: emptyArray()) +
-                            (NativeLibrary.getCheatsForFile(currentGame.path, currentGame.programId)
-                                ?: emptyArray())
+                        NativeLibrary.getPatchesForFile(currentGame.path, currentGame.programId)
+                            ?: emptyArray()
                     ).toMutableList()
-                    patchList.sortWith(
-                        compareBy<Patch> { PatchType.from(it.type).int }.thenBy { it.name }
-                    )
+                    patchList.sortBy { it.name }
                     patchList
                 }
                 _patchList.value = patchList
@@ -77,19 +73,6 @@ class AddonViewModel : ViewModel() {
         refreshAddons()
     }
 
-    fun onPatchEnabledChanged(patch: Patch, enabled: Boolean) {
-        patch.enabled = enabled
-        if (PatchType.from(patch.type) != PatchType.Cheat) {
-            return
-        }
-
-        viewModelScope.launch(Dispatchers.IO) {
-            NativeLibrary.setCheatEnabled(patch.titleId, patch.name, enabled)
-            NativeConfig.saveGlobalConfig()
-            NativeLibrary.reloadCheats(patch.programId)
-        }
-    }
-
     fun onCloseAddons() {
         val currentGame = game ?: return
         if (_patchList.value.isEmpty()) {
@@ -99,7 +82,7 @@ class AddonViewModel : ViewModel() {
         NativeConfig.setDisabledAddons(
             currentGame.programId,
             _patchList.value.mapNotNull {
-                if (it.enabled || PatchType.from(it.type) == PatchType.Cheat) {
+                if (it.enabled) {
                     null
                 } else {
                     it.name
