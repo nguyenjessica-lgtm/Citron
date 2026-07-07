@@ -401,6 +401,32 @@ object NativeLibrary {
     external fun getPatchesForFile(path: String, programId: String): Array<Patch>?
 
     /**
+     * Checks the PatchManager for any cheats that are available
+     *
+     * @param path Path to game file. Can be a [Uri].
+     * @param programId String representation of a game's program ID
+     * @return Array of available cheats
+     */
+    external fun getCheatsForFile(path: String, programId: String): Array<Patch>?
+
+    /**
+     * Enables or disables a single cheat by build ID and readable name.
+     *
+     * @param buildId NSO build ID associated with the cheat file
+     * @param name Readable cheat name
+     * @param enabled Whether the cheat should be enabled
+     */
+    external fun setCheatEnabled(buildId: String, name: String, enabled: Boolean)
+
+    /**
+     * Reloads cheats for the currently running game, if a cheat engine is active.
+     *
+     * @param programId String representation of a game's program ID
+     * @return true if the running cheat engine accepted a reload
+     */
+    external fun reloadCheats(programId: String): Boolean
+
+    /**
      * Removes an update for a given [programId]
      * @param programId String representation of a game's program ID
      */

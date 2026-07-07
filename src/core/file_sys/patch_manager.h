@@ -27,7 +27,7 @@ class ContentProvider;
 class NCA;
 class NACP;
 
-enum class PatchType { Update, DLC, Mod };
+enum class PatchType { Update, DLC, Mod, Cheat };
 
 struct Patch {
     bool enabled;
@@ -36,6 +36,12 @@ struct Patch {
     PatchType type;
     u64 program_id;
     u64 title_id;
+};
+
+struct CheatPatch {
+    bool enabled;
+    std::string name;
+    std::string build_id;
 };
 
 // A centralized class to manage patches to games.
@@ -79,6 +85,9 @@ public:
 
     // Returns a vector of patches
     [[nodiscard]] std::vector<Patch> GetPatches(VirtualFile update_raw = nullptr) const;
+
+    // Returns a vector of cheats found in enabled mod directories.
+    [[nodiscard]] std::vector<CheatPatch> GetCheats() const;
 
     // If the game update exists, returns the u32 version field in its Meta-type NCA. If that fails,
     // it will fallback to the Meta-type NCA of the base game. If that fails, the result will be

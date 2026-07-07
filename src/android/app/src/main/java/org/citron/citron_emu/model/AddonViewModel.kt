@@ -37,18 +37,27 @@ class AddonViewModel : ViewModel() {
     }
 
     fun refreshAddons() {
-        if (isRefreshing.get() || game == null) {
+        val currentGame = game ?: return
+        if (isRefreshing.get()) {
             return
         }
         isRefreshing.set(true)
         viewModelScope.launch {
-            withContext(Dispatchers.IO) {
-                val patchList = (
-                    NativeLibrary.getPatchesForFile(game!!.path, game!!.programId)
-                        ?: emptyArray()
+            try {
+                val patchList = withContext(Dispatchers.IO) {
+                    val patchList = (
+                        (NativeLibrary.getPatchesForFile(currentGame.path, currentGame.programId)
+                            ?: emptyArray()) +
+                            (NativeLibrary.getCheatsForFile(currentGame.path, currentGame.programId)
+                                ?: emptyArray())
                     ).toMutableList()
-                patchList.sortBy { it.name }
+                    patchList.sortWith(
+                        compareBy<Patch> { PatchType.from(it.type).int }.thenBy { it.name }
+                    )
+                    patchList
+                }
                 _patchList.value = patchList
+            } finally {
                 isRefreshing.set(false)
             }
         }
@@ -63,19 +72,34 @@ class AddonViewModel : ViewModel() {
             PatchType.Update -> NativeLibrary.removeUpdate(patch.programId)
             PatchType.DLC -> NativeLibrary.removeDLC(patch.programId)
             PatchType.Mod -> NativeLibrary.removeMod(patch.programId, patch.name)
+            PatchType.Cheat -> return
         }
         refreshAddons()
     }
 
+    fun onPatchEnabledChanged(patch: Patch, enabled: Boolean) {
+        patch.enabled = enabled
+        if (PatchType.from(patch.type) != PatchType.Cheat) {
+            return
+        }
+
+        viewModelScope.launch(Dispatchers.IO) {
+            NativeLibrary.setCheatEnabled(patch.titleId, patch.name, enabled)
+            NativeConfig.saveGlobalConfig()
+            NativeLibrary.reloadCheats(patch.programId)
+        }
+    }
+
     fun onCloseAddons() {
+        val currentGame = game ?: return
         if (_patchList.value.isEmpty()) {
             return
         }
 
         NativeConfig.setDisabledAddons(
-            game!!.programId,
+            currentGame.programId,
             _patchList.value.mapNotNull {
-                if (it.enabled) {
+                if (it.enabled || PatchType.from(it.type) == PatchType.Cheat) {
                     null
                 } else {
                     it.name
