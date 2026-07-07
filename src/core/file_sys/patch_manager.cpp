@@ -216,6 +216,33 @@ std::vector<VirtualDir> GetEnabledModsList(
     return mods;
 }
 
+std::vector<VirtualDir> GetCheatModsList(
+    u64 title_id, const Service::FileSystem::FileSystemController& fs_controller) {
+    std::vector<VirtualDir> mods;
+    const auto load_dir = fs_controller.GetModificationLoadRoot(title_id);
+    if (!load_dir) {
+        return mods;
+    }
+
+    for (const auto& top_dir : load_dir->GetSubdirectories()) {
+        if (!top_dir) {
+            continue;
+        }
+
+        if (FindSubdirectoryCaseless(top_dir, "cheats") != nullptr) {
+            mods.push_back(top_dir);
+            continue;
+        }
+
+        for (const auto& sub_dir : top_dir->GetSubdirectories()) {
+            if (sub_dir && FindSubdirectoryCaseless(sub_dir, "cheats") != nullptr) {
+                mods.push_back(sub_dir);
+            }
+        }
+    }
+    return mods;
+}
+
 bool IsDirValidAndNonEmpty(const VirtualDir& dir) {
     return dir != nullptr && (!dir->GetFiles().empty() || !dir->GetSubdirectories().empty());
 }
@@ -434,7 +461,7 @@ bool PatchManager::HasNSOPatch(const BuildID& build_id_, std::string_view name) 
 std::vector<Core::Memory::CheatEntry> PatchManager::CreateCheatList(
     const BuildID& build_id_) const {
 
-    std::vector<VirtualDir> patch_dirs = GetEnabledModsList(title_id, fs_controller);
+    std::vector<VirtualDir> patch_dirs = GetCheatModsList(title_id, fs_controller);
     const auto build_id = GetCheatBuildId(build_id_);
 
     std::sort(patch_dirs.begin(), patch_dirs.end(),
@@ -923,7 +950,7 @@ std::vector<Patch> PatchManager::GetPatches(VirtualFile update_raw) const {
 }
 
 std::vector<CheatPatch> PatchManager::GetCheats() const {
-    std::vector<VirtualDir> patch_dirs = GetEnabledModsList(title_id, fs_controller);
+    std::vector<VirtualDir> patch_dirs = GetCheatModsList(title_id, fs_controller);
     std::sort(patch_dirs.begin(), patch_dirs.end(),
               [](const VirtualDir& l, const VirtualDir& r) { return l->GetName() < r->GetName(); });
 
