@@ -425,17 +425,17 @@ class EmulationActivity : AppCompatActivity(), SensorEventListener {
         try {
             action()
         } catch (e: IllegalStateException) {
-            if (pictureInPictureFailureActions.add(actionName)) {
-                Log.warning("[PiP] Failed to $actionName: ${e.message}")
-            }
+            logPictureInPictureFailure(actionName, e)
         } catch (e: UnsupportedOperationException) {
-            if (pictureInPictureFailureActions.add(actionName)) {
-                Log.warning("[PiP] Failed to $actionName: ${e.message}")
-            }
+            logPictureInPictureFailure(actionName, e)
         } catch (e: IllegalArgumentException) {
-            if (pictureInPictureFailureActions.add(actionName)) {
-                Log.warning("[PiP] Failed to $actionName: ${e.message}")
-            }
+            logPictureInPictureFailure(actionName, e)
+        }
+    }
+
+    private fun logPictureInPictureFailure(actionName: String, exception: RuntimeException) {
+        if (pictureInPictureFailureActions.add(actionName)) {
+            Log.warning("[PiP] Failed to $actionName: ${exception.message}")
         }
     }
 
