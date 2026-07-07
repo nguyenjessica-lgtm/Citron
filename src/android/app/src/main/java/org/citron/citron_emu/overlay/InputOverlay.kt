@@ -241,6 +241,8 @@ class InputOverlay(context: Context, attrs: AttributeSet?) :
     }
 
     override fun onTouch(v: View, event: MotionEvent): Boolean {
+        requestUnbufferedTouchDispatch(event)
+
         if (inEditMode) {
             return onTouchWhileEditing(event)
         }
@@ -349,6 +351,13 @@ class InputOverlay(context: Context, attrs: AttributeSet?) :
         }
 
         return true
+    }
+
+    private fun requestUnbufferedTouchDispatch(event: MotionEvent) {
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN,
+            MotionEvent.ACTION_POINTER_DOWN -> requestUnbufferedDispatch(event)
+        }
     }
 
     private fun playHaptics(event: MotionEvent) {

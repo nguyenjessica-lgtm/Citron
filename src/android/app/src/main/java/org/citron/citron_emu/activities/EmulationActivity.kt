@@ -236,6 +236,8 @@ class EmulationActivity : AppCompatActivity(), SensorEventListener {
             return super.dispatchGenericMotionEvent(event)
         }
 
+        window.decorView.requestUnbufferedDispatch(event.source)
+
         // Don't attempt to do anything if we are disconnecting a device.
         if (event.actionMasked == MotionEvent.ACTION_CANCEL) {
             return true
@@ -326,7 +328,18 @@ class EmulationActivity : AppCompatActivity(), SensorEventListener {
             5 -> null // Stretch to window
             else -> null // Best fit
         }
-        return this.apply { aspectRatio?.let { setAspectRatio(it) } }
+        return this.apply { aspectRatio?.let { setAspectRatio(it.clampForPictureInPicture()) } }
+    }
+
+    private fun Rational.clampForPictureInPicture(): Rational {
+        val value = toFloat()
+        return when {
+            value < MIN_PICTURE_IN_PICTURE_ASPECT_RATIO.toFloat() ->
+                MIN_PICTURE_IN_PICTURE_ASPECT_RATIO
+            value > MAX_PICTURE_IN_PICTURE_ASPECT_RATIO.toFloat() ->
+                MAX_PICTURE_IN_PICTURE_ASPECT_RATIO
+            else -> this
+        }
     }
 
     private fun PictureInPictureParams.Builder.getPictureInPictureActionsBuilder():
@@ -416,6 +429,10 @@ class EmulationActivity : AppCompatActivity(), SensorEventListener {
                 Log.warning("[PiP] Failed to $actionName: ${e.message}")
             }
         } catch (e: UnsupportedOperationException) {
+            if (pictureInPictureFailureActions.add(actionName)) {
+                Log.warning("[PiP] Failed to $actionName: ${e.message}")
+            }
+        } catch (e: IllegalArgumentException) {
             if (pictureInPictureFailureActions.add(actionName)) {
                 Log.warning("[PiP] Failed to $actionName: ${e.message}")
             }
@@ -526,6 +543,8 @@ class EmulationActivity : AppCompatActivity(), SensorEventListener {
 
     companion object {
         const val EXTRA_SELECTED_GAME = "SelectedGame"
+        private val MIN_PICTURE_IN_PICTURE_ASPECT_RATIO = Rational(100, 239)
+        private val MAX_PICTURE_IN_PICTURE_ASPECT_RATIO = Rational(239, 100)
 
         fun launch(activity: AppCompatActivity, game: Game) {
             val launcher = Intent(activity, EmulationActivity::class.java)
