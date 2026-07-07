@@ -12,6 +12,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.graphics.Rect
 import android.graphics.drawable.Icon
@@ -71,6 +72,7 @@ class EmulationActivity : AppCompatActivity(), SensorEventListener {
     private val actionPlay = "ACTION_EMULATOR_PLAY"
     private val actionMute = "ACTION_EMULATOR_MUTE"
     private val actionUnmute = "ACTION_EMULATOR_UNMUTE"
+    private val pictureInPictureFailureActions: MutableSet<String> = mutableSetOf()
 
     private val emulationViewModel: EmulationViewModel by viewModels()
 
@@ -187,12 +189,18 @@ class EmulationActivity : AppCompatActivity(), SensorEventListener {
     }
 
     override fun onUserLeaveHint() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
-            if (BooleanSetting.PICTURE_IN_PICTURE.getBoolean() && !isInPictureInPictureMode) {
-                val pictureInPictureParamsBuilder = PictureInPictureParams.Builder()
-                    .getPictureInPictureActionsBuilder().getPictureInPictureAspectBuilder()
-                enterPictureInPictureMode(pictureInPictureParamsBuilder.build())
-            }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ||
+            !isPictureInPictureSupported() ||
+            !BooleanSetting.PICTURE_IN_PICTURE.getBoolean() ||
+            isInPictureInPictureMode
+        ) {
+            return
+        }
+
+        val pictureInPictureParamsBuilder = PictureInPictureParams.Builder()
+            .getPictureInPictureActionsBuilder().getPictureInPictureAspectBuilder()
+        runPictureInPictureAction("enter picture-in-picture mode") {
+            enterPictureInPictureMode(pictureInPictureParamsBuilder.build())
         }
     }
 
@@ -396,7 +404,29 @@ class EmulationActivity : AppCompatActivity(), SensorEventListener {
         return this.apply { setActions(pictureInPictureActions) }
     }
 
+    private fun isPictureInPictureSupported() =
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+            packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)
+
+    private fun runPictureInPictureAction(actionName: String, action: () -> Unit) {
+        try {
+            action()
+        } catch (e: IllegalStateException) {
+            if (pictureInPictureFailureActions.add(actionName)) {
+                Log.warning("[PiP] Failed to $actionName: ${e.message}")
+            }
+        } catch (e: UnsupportedOperationException) {
+            if (pictureInPictureFailureActions.add(actionName)) {
+                Log.warning("[PiP] Failed to $actionName: ${e.message}")
+            }
+        }
+    }
+
     fun buildPictureInPictureParams() {
+        if (!isPictureInPictureSupported()) {
+            return
+        }
+
         val pictureInPictureParamsBuilder = PictureInPictureParams.Builder()
             .getPictureInPictureActionsBuilder().getPictureInPictureAspectBuilder()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -406,7 +436,9 @@ class EmulationActivity : AppCompatActivity(), SensorEventListener {
                 BooleanSetting.PICTURE_IN_PICTURE.getBoolean() && isEmulationActive
             )
         }
-        setPictureInPictureParams(pictureInPictureParamsBuilder.build())
+        runPictureInPictureAction("set picture-in-picture params") {
+            setPictureInPictureParams(pictureInPictureParamsBuilder.build())
+        }
     }
 
     private var pictureInPictureReceiver = object : BroadcastReceiver() {

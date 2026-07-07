@@ -242,7 +242,7 @@ class GamePropertiesFragment : Fragment() {
 
                 val shaderCacheDir = File(
                     DirectoryInitialization.userDirectory +
-                        "/shader/" + args.game.settingsName.lowercase()
+                        "/cache/shader/" + args.game.settingsName.lowercase()
                 )
                 if (shaderCacheDir.exists()) {
                     add(
