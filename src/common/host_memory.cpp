@@ -27,6 +27,7 @@
 
 #endif // ^^^ Linux ^^^
 
+#include <atomic>
 #include <mutex>
 #include <random>
 
@@ -483,6 +484,10 @@ public:
     }
 
     void Map(size_t virtual_offset, size_t host_offset, size_t length, MemoryPermission perms) {
+        const u64 map_id = map_count.fetch_add(1, std::memory_order_relaxed) + 1;
+        const size_t requested_virtual_offset = virtual_offset;
+        const size_t requested_length = length;
+
         // Intersect the range with our address space.
         AdjustMap(&virtual_offset, &length);
 
@@ -505,10 +510,30 @@ public:
 
         void* ret = mmap(virtual_base + virtual_offset, length, flags, MAP_SHARED | MAP_FIXED, fd,
                          host_offset);
-        ASSERT_MSG(ret != MAP_FAILED, "mmap failed: {}", strerror(errno));
+        if (ret == MAP_FAILED) [[unlikely]] {
+            const int saved_errno = errno;
+            LOG_CRITICAL(HW_Memory,
+                         "HostMemory::Map mmap failed: error={} ({}) map_id={} unmap_count={} "
+                         "requested_virtual_offset={:#x} adjusted_virtual_offset={:#x} "
+                         "host_offset={:#x} requested_length={:#x} adjusted_length={:#x} "
+                         "perms={:#x} prot_flags={:#x} fd={} virtual_base={} target={} "
+                         "backing_size={:#x} virtual_size={:#x}",
+                         saved_errno, strerror(saved_errno), map_id,
+                         unmap_count.load(std::memory_order_relaxed), requested_virtual_offset,
+                         virtual_offset, host_offset, requested_length, length,
+                         static_cast<u32>(perms), flags, fd, static_cast<void*>(virtual_base),
+                         static_cast<void*>(virtual_base + virtual_offset), backing_size,
+                         virtual_size);
+            Common::Log::Stop();
+            Crash();
+        }
     }
 
     void Unmap(size_t virtual_offset, size_t length) {
+        const u64 unmap_id = unmap_count.fetch_add(1, std::memory_order_relaxed) + 1;
+        const size_t requested_virtual_offset = virtual_offset;
+        const size_t requested_length = length;
+
         // The method name is wrong. We're still talking about the virtual range.
         // We don't want to unmap, we want to reserve this memory.
 
@@ -521,7 +546,21 @@ public:
 
         void* ret = mmap(merged_pointer, merged_size, PROT_NONE,
                          MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0);
-        ASSERT_MSG(ret != MAP_FAILED, "mmap failed: {}", strerror(errno));
+        if (ret == MAP_FAILED) [[unlikely]] {
+            const int saved_errno = errno;
+            LOG_CRITICAL(HW_Memory,
+                         "HostMemory::Unmap reserve mmap failed: error={} ({}) map_count={} "
+                         "unmap_id={} requested_virtual_offset={:#x} adjusted_virtual_offset={:#x} "
+                         "requested_length={:#x} adjusted_length={:#x} merged_pointer={} "
+                         "merged_size={:#x} virtual_base={} backing_size={:#x} virtual_size={:#x}",
+                         saved_errno, strerror(saved_errno),
+                         map_count.load(std::memory_order_relaxed), unmap_id,
+                         requested_virtual_offset, virtual_offset, requested_length, length,
+                         merged_pointer, merged_size, static_cast<void*>(virtual_base), backing_size,
+                         virtual_size);
+            Common::Log::Stop();
+            Crash();
+        }
     }
 
     void Protect(size_t virtual_offset, size_t length, bool read, bool write, bool execute) {
@@ -597,6 +636,8 @@ private:
 
     int fd{-1}; // memfd file descriptor, -1 is the error value of memfd_create
     FreeRegionManager free_manager{};
+    std::atomic<u64> map_count{0};
+    std::atomic<u64> unmap_count{0};
 };
 
 #else // ^^^ Linux ^^^ vvv Generic vvv
