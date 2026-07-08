@@ -4928,7 +4928,18 @@ stage_clangcl() {
             # the CS layer). Remove it so the merge block below re-runs.
             local merged_pd="${PROFILE_DIR}/clang-cl-merged.profdata"
             local stage1_pd="${PROFILE_DIR}/clang-cl-ir.profdata"
+            local stage1_pd_default="${PROFILE_DIR}/default.profdata"
             local profdata_use
+
+            # default.profdata (written by the shared generate/use flow above)
+            # is an equally valid stage-1 base as clang-cl-ir.profdata. Prefer
+            # clang-cl-ir.profdata when both exist (it's the more specific
+            # name for this stage), but fall back to default.profdata so a
+            # CS run after a plain 'use' doesn't miss the available stage-1
+            # base.
+            if [[ ! -f "${stage1_pd}" && -f "${stage1_pd_default}" ]]; then
+                stage1_pd="${stage1_pd_default}"
+            fi
 
             if [[ -f "${merged_pd}" ]]; then
                 local _cs_dir_check="${PROFILE_DIR}/cs"

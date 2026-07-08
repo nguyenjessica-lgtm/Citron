@@ -909,8 +909,16 @@ add_subdirectory(src)
 
 # Build all shipped executables in one graph.
 if(CITRON_CLANGCL)
+    set(_citron_runtime_deps citron)
+    if(TARGET citron-cmd)
+        list(APPEND _citron_runtime_deps citron-cmd)
+    endif()
+    if(TARGET citron-room)
+        list(APPEND _citron_runtime_deps citron-room)
+    endif()
     add_custom_target(citron-runtime
-        DEPENDS citron citron-cmd citron-room)
+        DEPENDS ${_citron_runtime_deps})
+    unset(_citron_runtime_deps)
 endif()
 
 # Add the compile definition for Dynarmic

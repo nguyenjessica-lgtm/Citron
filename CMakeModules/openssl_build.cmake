@@ -119,7 +119,8 @@ endif()
 function(_citron_detect_openssl_libdir out_var)
     set(_detected "")
     foreach(_candidate_libdir lib64 lib)
-        if (EXISTS "${_OPENSSL_INSTALL}/${_candidate_libdir}/${_OPENSSL_SSL_NAME}")
+        if (EXISTS "${_OPENSSL_INSTALL}/${_candidate_libdir}/${_OPENSSL_SSL_NAME}" AND
+            EXISTS "${_OPENSSL_INSTALL}/${_candidate_libdir}/${_OPENSSL_CRYPTO_NAME}")
             set(_detected "${_candidate_libdir}")
             break()
         endif()
@@ -130,7 +131,7 @@ endfunction()
 function(_citron_publish_openssl_imports)
     _citron_detect_openssl_libdir(_OPENSSL_PUBLISH_LIBDIR)
     if (NOT _OPENSSL_PUBLISH_LIBDIR)
-        message(WARNING "[OpenSSL] Static libraries not found under ${_OPENSSL_INSTALL}/{lib64,lib}")
+        message(WARNING "[OpenSSL] Static libraries (${_OPENSSL_SSL_NAME} and/or ${_OPENSSL_CRYPTO_NAME}) not found under ${_OPENSSL_INSTALL}/{lib64,lib}")
         return()
     endif()
 
@@ -304,6 +305,15 @@ set(_OPENSSL_CONFIGURE_ARGS
 )
 if (_OPENSSL_CROSS)
     list(APPEND _OPENSSL_CONFIGURE_ARGS "--cross-compile-prefix=${_OPENSSL_CROSS}")
+endif()
+if (_OPENSSL_TARGET STREQUAL "VC-WIN64A")
+    # The rest of the project is forced onto the dynamic CRT (/MD, /MDd) via
+    # CMAKE_MSVC_RUNTIME_LIBRARY in the top-level CMakeLists.txt. OpenSSL's
+    # VC-WIN64A Configure target does not automatically match that; passing
+    # -MD here pins OpenSSL's own build to the same CRT so its static libs
+    # don't get linked against a mismatched runtime (which otherwise shows up
+    # as CRT-mismatch link errors, e.g. LNK2038/LNK4098-style conflicts).
+    list(APPEND _OPENSSL_CONFIGURE_ARGS "-MD")
 endif()
 list(APPEND _OPENSSL_CONFIGURE_ARGS "CC=${_OPENSSL_CC}" "AR=${_OPENSSL_AR}")
 if (_OPENSSL_RANLIB)

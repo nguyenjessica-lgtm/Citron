@@ -118,7 +118,7 @@ function(citron_build_clangcl_ffmpeg)
             "${BASH_PROGRAM}" -lc "export PATH='${_clangcl_tool_dir_msys}:${_linker_tool_dir_msys}:${_ar_tool_dir_msys}':$PATH && '${MAKE_PROGRAM}' install"
         COMMAND "${CMAKE_COMMAND}" -E env "MSYS2_ARG_CONV_EXCL=*"
             "${BASH_PROGRAM}" -lc
-            "cd '${_install_dir_msys}/lib' && test -f libavfilter.a && mv -f libavfilter.a avfilter.lib; test -f libswscale.a && mv -f libswscale.a swscale.lib; test -f libavcodec.a && mv -f libavcodec.a avcodec.lib; test -f libavutil.a && mv -f libavutil.a avutil.lib; true"
+            "cd '${_install_dir_msys}/lib' && for f in avfilter swscale avcodec avutil; do if [ -f \"lib$f.a\" ]; then mv -f \"lib$f.a\" \"$f.lib\" || exit 1; elif [ ! -f \"$f.lib\" ]; then echo \"[FFmpeg/clang-cl] Missing both lib$f.a and $f.lib after make install\" >&2; exit 1; fi; done"
         COMMAND "${CMAKE_COMMAND}" -E touch "${_build_stamp}"
         DEPENDS "${CMAKE_CURRENT_LIST_FILE}" "${_source_dir}/configure"
         WORKING_DIRECTORY "${_build_dir_win}"

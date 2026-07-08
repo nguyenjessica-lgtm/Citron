@@ -57,7 +57,7 @@ endif()
 # Computed once here and reused both by the native Linux target case below
 # and by the cross-compile host Qt block, so moc/rcc/uic are always fetched
 # for the actual build host architecture, not a hardcoded x86-64.
-if (CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "aarch64|arm64" OR ARCHITECTURE_arm64)
+if (CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "aarch64|arm64")
     set(_QT_HOST_OS       "linux_arm64")
     set(_QT_HOST_ARCH     "linux_gcc_arm64")
     set(_QT_HOST_DIR_NAME "gcc_arm64")
