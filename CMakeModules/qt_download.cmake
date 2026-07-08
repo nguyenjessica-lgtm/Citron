@@ -136,14 +136,9 @@ else()
         message(STATUS "[Qt] Qt ${CITRON_QT_VERSION} target downloaded")
     endif()
 
-    # Download additional modules (imageformats, svg, tools).
-    # qtmultimedia is intentionally excluded: all Qt Multimedia camera code in
-    # citron is guarded by (QT_VERSION < 6.0.0) && CITRON_USE_QT_MULTIMEDIA,
-    # so it is permanently dead code under Qt6.  CITRON_USE_QT_MULTIMEDIA=OFF
-    # is set in build-citron-linux.sh, but the Qt5-only guard makes it a no-op
-    # regardless.  Including qtmultimedia in --modules was the sole cause of the
-    # recurring "[Qt] Additional module install failed" CI warning: aqt silently
-    # rejects module name mismatches for certain arch/version combos.
+    # Download additional modules (imageformats, svg).
+    # Note: qtmultimedia is intentionally NOT downloaded here — it isn't used
+    # by citron-neo on Qt6+.
     set(_QT_SVG_CMAKE  "${_QT_TARGET_DIR}/lib/cmake/Qt6Svg/Qt6SvgConfig.cmake")
     # Qt6CoreTools ships with qtbase itself, so it can't be used to detect a
     # missing qttools module. Qt6LinguistTools is only installed by qttools,
@@ -205,7 +200,6 @@ if (CMAKE_HOST_UNIX AND WIN32)
             if (NOT _qt_host_result EQUAL 0)
                 message(WARNING "[Qt] Host Qt download failed — cross-compile may fail")
             endif()
-            # qtmultimedia not downloaded for host Qt — dead code under Qt6 (see target Qt comment above)
         endif()
 
         if (EXISTS "${_QT_HOST_CMAKE}")
