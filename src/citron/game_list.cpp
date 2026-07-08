@@ -53,7 +53,6 @@
 #include <QSequentialAnimationGroup>
 #include <QSpacerItem>
 #include <QStackedWidget>
-#include <QStandardPaths>
 #include <QStyle>
 #include <QStyleOption>
 #include <QThreadPool>
@@ -4483,8 +4482,9 @@ void GameList::SaveGameListIndex() {
         root_array.append(folder_obj);
     }
 
-    const QString path = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) +
-                         QStringLiteral("/game_list_metadata.json");
+    const auto cache_dir = Common::FS::GetCitronPath(Common::FS::CitronPath::CacheDir) / "game_list";
+    const QString path =
+        QString::fromStdString(Common::FS::PathToUTF8String(cache_dir / "game_list_metadata.json"));
     QDir().mkpath(QFileInfo(path).absolutePath());
     QFile file(path);
     if (file.open(QIODevice::WriteOnly)) {
@@ -4493,8 +4493,9 @@ void GameList::SaveGameListIndex() {
 }
 
 void GameList::LoadGameListIndex() {
-    const QString path = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) +
-                         QStringLiteral("/game_list_metadata.json");
+    const auto cache_dir = Common::FS::GetCitronPath(Common::FS::CitronPath::CacheDir) / "game_list";
+    const QString path =
+        QString::fromStdString(Common::FS::PathToUTF8String(cache_dir / "game_list_metadata.json"));
     QFile file(path);
     if (!file.open(QIODevice::ReadOnly))
         return;

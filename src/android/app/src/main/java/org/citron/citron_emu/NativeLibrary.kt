@@ -188,6 +188,7 @@ object NativeLibrary {
     }
 
     var coreErrorAlertResult = false
+    @Suppress("PLATFORM_CLASS_MAPPED_TO_KOTLIN")
     val coreErrorAlertLock = Object()
 
     private fun onCoreErrorImpl(title: String, message: String) {
