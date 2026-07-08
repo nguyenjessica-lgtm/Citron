@@ -51,6 +51,22 @@ if (NOT _AQT_EXECUTABLE)
     endif()
 endif()
 
+# ── Shared Linux host-arch selection ─────────────────────────────────────────
+# aqt uses separate host-OS strings for x86-64 ("linux") and arm64
+# ("linux_arm64"); the arch token is then linux_gcc_64 or linux_gcc_arm64.
+# Computed once here and reused both by the native Linux target case below
+# and by the cross-compile host Qt block, so moc/rcc/uic are always fetched
+# for the actual build host architecture, not a hardcoded x86-64.
+if (CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "aarch64|arm64" OR ARCHITECTURE_arm64)
+    set(_QT_HOST_OS       "linux_arm64")
+    set(_QT_HOST_ARCH     "linux_gcc_arm64")
+    set(_QT_HOST_DIR_NAME "gcc_arm64")
+else()
+    set(_QT_HOST_OS       "linux")
+    set(_QT_HOST_ARCH     "linux_gcc_64")
+    set(_QT_HOST_DIR_NAME "gcc_64")
+endif()
+
 # ── Determine target platform ──────────────────────────────────────────────────
 # WIN32 is TRUE both for native MSYS2 builds and for Linux→Windows cross-compile
 # because the CMAKE_SYSTEM_NAME is Windows in both cases.
@@ -77,22 +93,13 @@ else()
         set(_QT_DIR_NAME  "macos")
         set(_QT_CMAKE_SUB "lib/cmake/Qt6")
     else()
-        # Native Linux — pick host/arch variant to match the build processor so
+        # Native Linux — reuse the shared host-arch selection above so
         # moc/rcc/uic (which run on the build host) are the correct ELF arch.
-        # aqt uses separate host-OS strings for x86-64 ("linux") and arm64
-        # ("linux_arm64"); the arch token is then linux_gcc_64 or linux_gcc_arm64.
+        set(_QT_OS        "${_QT_HOST_OS}")
+        set(_QT_TARGET    "desktop")
+        set(_QT_ARCH      "${_QT_HOST_ARCH}")
+        set(_QT_DIR_NAME  "${_QT_HOST_DIR_NAME}")
         set(_QT_CMAKE_SUB "lib/cmake/Qt6")
-        if (CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "aarch64|arm64" OR ARCHITECTURE_arm64)
-            set(_QT_OS        "linux_arm64")
-            set(_QT_TARGET    "desktop")
-            set(_QT_ARCH      "linux_gcc_arm64")
-            set(_QT_DIR_NAME  "gcc_arm64")
-        else()
-            set(_QT_OS        "linux")
-            set(_QT_TARGET    "desktop")
-            set(_QT_ARCH      "linux_gcc_64")
-            set(_QT_DIR_NAME  "gcc_64")
-        endif()
     endif()
 endif()
 
@@ -138,20 +145,23 @@ else()
     # recurring "[Qt] Additional module install failed" CI warning: aqt silently
     # rejects module name mismatches for certain arch/version combos.
     set(_QT_SVG_CMAKE  "${_QT_TARGET_DIR}/lib/cmake/Qt6Svg/Qt6SvgConfig.cmake")
-    set(_QT_TOOL_CMAKE "${_QT_TARGET_DIR}/lib/cmake/Qt6CoreTools/Qt6CoreToolsConfig.cmake")
+    # Qt6CoreTools ships with qtbase itself, so it can't be used to detect a
+    # missing qttools module. Qt6LinguistTools is only installed by qttools,
+    # so use that as the presence check instead.
+    set(_QT_TOOL_CMAKE "${_QT_TARGET_DIR}/lib/cmake/Qt6LinguistTools/Qt6LinguistToolsConfig.cmake")
     if (NOT EXISTS "${_QT_SVG_CMAKE}" OR NOT EXISTS "${_QT_TOOL_CMAKE}")
-        message(STATUS "[Qt] Downloading Qt ${CITRON_QT_VERSION} additional modules (qttools, qtimageformats)...")
+        message(STATUS "[Qt] Downloading Qt ${CITRON_QT_VERSION} additional modules (qttools, qtimageformats, qtsvg)...")
         execute_process(
             COMMAND ${_AQT_EXECUTABLE} install-qt
                     ${_QT_OS} ${_QT_TARGET}
                     ${CITRON_QT_VERSION} ${_QT_ARCH}
                     --outputdir "${CITRON_QT_BASE_DIR}"
-                    --modules qttools qtimageformats
+                    --modules qttools qtimageformats qtsvg
             RESULT_VARIABLE _qt_addl_result
             OUTPUT_QUIET ERROR_QUIET
         )
         if (NOT _qt_addl_result EQUAL 0)
-            message(WARNING "[Qt] Additional module install failed (qttools/qtimageformats) — build may fail")
+            message(WARNING "[Qt] Additional module install failed (qttools/qtimageformats/qtsvg) — build may fail")
         endif()
     endif()
 
@@ -180,14 +190,14 @@ if (CMAKE_HOST_UNIX AND WIN32)
     if (QT_HOST_PATH AND EXISTS "${QT_HOST_PATH}/lib/cmake/Qt6/Qt6Config.cmake")
         message(STATUS "[Qt] Using host Qt from QT_HOST_PATH: ${QT_HOST_PATH}")
     else()
-        set(_QT_HOST_DIR   "${CITRON_QT_BASE_DIR}/${CITRON_QT_VERSION}/gcc_64")
+        set(_QT_HOST_DIR   "${CITRON_QT_BASE_DIR}/${CITRON_QT_VERSION}/${_QT_HOST_DIR_NAME}")
         set(_QT_HOST_CMAKE "${_QT_HOST_DIR}/lib/cmake/Qt6/Qt6Config.cmake")
 
         if (NOT EXISTS "${_QT_HOST_CMAKE}")
-            message(STATUS "[Qt] Downloading Qt ${CITRON_QT_VERSION} linux_gcc_64 host tools via aqt...")
+            message(STATUS "[Qt] Downloading Qt ${CITRON_QT_VERSION} ${_QT_HOST_ARCH} host tools via aqt...")
             execute_process(
-                COMMAND ${_AQT_EXECUTABLE} install-qt linux desktop
-                        ${CITRON_QT_VERSION} linux_gcc_64
+                COMMAND ${_AQT_EXECUTABLE} install-qt ${_QT_HOST_OS} desktop
+                        ${CITRON_QT_VERSION} ${_QT_HOST_ARCH}
                         --outputdir "${CITRON_QT_BASE_DIR}"
                 RESULT_VARIABLE _qt_host_result
                 OUTPUT_QUIET ERROR_QUIET

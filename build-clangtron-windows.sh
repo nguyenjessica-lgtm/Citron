@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env bash
+#!/usr/bin/env bash
 # SPDX-FileCopyrightText: 2026 citron Emulator Project
 # SPDX-License-Identifier: GPL-3.0-or-later
 # =============================================================================
@@ -4808,11 +4808,11 @@ stage_clangcl() {
 
     # ── Sentinel: record generate config; verify it matches on csgenerate/use ─
     # Mirrors the llvm-mingw sentinel logic so LTO+PGO mismatches are caught
-    # before a long build wastes time.
+    # before a long build wastes time. The write for STAGE=="generate" happens
+    # later, only after the build succeeds, so a failed/invalid generate run
+    # never leaves stale sentinel state for csgenerate/use to read.
     local _gen_cfg="${BUILD_ROOT}/.citron-clangcl-gen-config"
-    if [[ "${STAGE}" == "generate" ]]; then
-        printf "LTO=%s\nPGO=%s\n" "${LTO_MODE}" "${PGO_MODE}" > "${_gen_cfg}"
-    elif [[ -f "${_gen_cfg}" ]]; then
+    if [[ "${STAGE}" != "generate" && -f "${_gen_cfg}" ]]; then
         local _gen_lto _gen_pgo
         _gen_lto=$(awk -F= '/^LTO=/{print $2; exit}' "${_gen_cfg}" 2>/dev/null || true)
         _gen_pgo=$(awk -F= '/^PGO=/{print $2; exit}' "${_gen_cfg}" 2>/dev/null || true)
@@ -5045,6 +5045,10 @@ stage_clangcl() {
                     error "llvm-profdata stage-1 merge failed."
             fi
             flags="/clang:-fprofile-use=$(cygpath -am "${stage1}") /clang:-fcs-profile-generate"
+            # Create the cs/ sub-directory now so the user has a ready-made
+            # drop target for the cs-default-*.profraw files collected on Windows.
+            # Mirrors what stage_csgenerate() does for the llvm-mingw path.
+            mkdir -p "${PROFILE_DIR}/cs"
             ;;
         *) error "Unsupported clang-cl PGO flow: ${PGO_MODE}:${STAGE}" ;;
     esac
@@ -5076,16 +5080,23 @@ stage_clangcl() {
     local msys2_usr_bin_win
     msys2_usr_bin_win="$(cygpath -am /usr/bin)"
     # Resolve native Python Scripts dir for aqt.exe (needed by cmake find_program).
+    # Prefer the Scripts/ dir next to the actually-resolved native_python
+    # (handles PYTHON_EXECUTABLE overrides and per-user installs), falling
+    # back to the fixed candidate locations only if that doesn't exist.
     local python_scripts_win=""
-    local _py_scripts_candidate
-    for _py_scripts_candidate in \
-            /c/hostedtoolcache/windows/Python/3.12.*/x64 \
-            /c/Python312; do
-        if [[ -x "${_py_scripts_candidate}/python.exe" ]]; then
-            python_scripts_win="$(cygpath -am "${_py_scripts_candidate}/Scripts")"
-            break
-        fi
-    done
+    if [[ -n "${native_python}" && -d "$(dirname "${native_python}")/Scripts" ]]; then
+        python_scripts_win="$(cygpath -am "$(dirname "${native_python}")/Scripts")"
+    else
+        local _py_scripts_candidate
+        for _py_scripts_candidate in \
+                /c/hostedtoolcache/windows/Python/3.12.*/x64 \
+                /c/Python312; do
+            if [[ -x "${_py_scripts_candidate}/python.exe" ]]; then
+                python_scripts_win="$(cygpath -am "${_py_scripts_candidate}/Scripts")"
+                break
+            fi
+        done
+    fi
 
     # ── Artifact cache resolution ─────────────────────────────────────────────
     # Qt, OpenSSL, and FFmpeg are stored under CPM_SOURCE_CACHE so they survive
@@ -5215,6 +5226,10 @@ CLANGCL_CMD_EOF
         error "clang-cl ${stage_name} build failed."
     [[ -f "${package_dir}/citron.exe" ]] ||
         error "clang-cl build returned success but citron.exe is missing."
+    if [[ "${STAGE}" == "generate" ]]; then
+        mkdir -p "${BUILD_ROOT}"
+        printf "LTO=%s\nPGO=%s\n" "${LTO_MODE}" "${PGO_MODE}" > "${_gen_cfg}"
+    fi
     local binary_win
     binary_win="$(cygpath -am "${package_dir}/citron.exe")"
     success "clang-cl runtime package: ${package_dir}"

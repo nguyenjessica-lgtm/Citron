@@ -308,6 +308,16 @@ endif()
 
 # ── opus ──────────────────────────────────────────────────────────────────────
 if (NOT TARGET Opus::opus)
+    set(_opus_cpm_patches "")
+    if (CITRON_CLANGCL)
+        # Opus only applies -msse4.1 under `if (NOT MSVC)`, but CMake's MSVC
+        # var is TRUE for clang-cl too, so that branch never fires — hence
+        # "requires target feature 'sse4.1'" errors. Can't fix this from here
+        # (set_source_files_properties is directory-scoped); must patch opus's
+        # own CMakeLists.txt to add an elseif for clang-cl detection.
+        list(APPEND _opus_cpm_patches "${CMAKE_SOURCE_DIR}/patches/opus-clangcl-sse4.patch")
+    endif()
+
     CPMAddPackage(
         NAME opus
         GITHUB_REPOSITORY xiph/opus
@@ -317,11 +327,10 @@ if (NOT TARGET Opus::opus)
             "OPUS_BUILD_PROGRAMS OFF"
             "OPUS_INSTALL_PKG_CONFIG_MODULE OFF"
             "OPUS_INSTALL_CMAKE_CONFIG_MODULE OFF"
+        PATCHES
+            ${_opus_cpm_patches}
     )
-    if (CITRON_CLANGCL AND TARGET opus)
-        # Opus' SSE4.1 path also uses SSSE3 intrinsics.
-        target_compile_options(opus PRIVATE /clang:-msse4.1 /clang:-mssse3)
-    endif()
+    unset(_opus_cpm_patches)
 endif()
 
 # ── cubeb ─────────────────────────────────────────────────────────────────────

@@ -43,11 +43,9 @@
 
 #else // _MSC_VER
 
-#if defined(_MSC_VER) && defined(__clang__)
+// __declspec(noinline) is understood by both cl.exe and clang-cl, so plain
+// MSVC builds get noinline behavior here too, not just clang-cl.
 #define LTO_NOINLINE __declspec(noinline)
-#else
-#define LTO_NOINLINE
-#endif
 
 // Locale Cross-Compatibility
 #define locale_t _locale_t

@@ -17,8 +17,8 @@ set_property(DIRECTORY APPEND PROPERTY
 if (MSVC)
     if (CITRON_CLANGCL)
         add_compile_definitions(CITRON_CLANGCL=1)
+        set(CMAKE_CONFIGURATION_TYPES Debug Release RelWithDebInfo CACHE STRING "" FORCE)
     endif()
-    set(CMAKE_CONFIGURATION_TYPES Debug Release RelWithDebInfo CACHE STRING "" FORCE)
 
     # Silence "deprecation" warnings
     add_definitions(-D_CRT_SECURE_NO_WARNINGS -D_CRT_NONSTDC_NO_DEPRECATE -D_SCL_SECURE_NO_WARNINGS)
