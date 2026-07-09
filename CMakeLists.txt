@@ -51,8 +51,8 @@ endif()
 
 # Set bundled sdl2/qt as dependent options.
 option(ENABLE_SDL2 "Enable the SDL2 frontend" ON)
-CMAKE_DEPENDENT_OPTION(CITRON_USE_BUNDLED_SDL2 "Download bundled SDL2 binaries" ON "ENABLE_SDL2;MSVC" OFF)
-CMAKE_DEPENDENT_OPTION(CITRON_USE_EXTERNAL_SDL2 "Compile external SDL2" ON "ENABLE_SDL2;NOT MSVC" OFF)
+CMAKE_DEPENDENT_OPTION(CITRON_USE_BUNDLED_SDL2 "Download bundled SDL2 binaries" ON "ENABLE_SDL2;MSVC;NOT CITRON_CLANGCL" OFF)
+CMAKE_DEPENDENT_OPTION(CITRON_USE_EXTERNAL_SDL2 "Compile external SDL2" ON "ENABLE_SDL2;NOT MSVC OR CITRON_CLANGCL" OFF)
 
 cmake_dependent_option(ENABLE_LIBUSB "Enable the use of LibUSB" ON "NOT ANDROID" OFF)
 
@@ -320,6 +320,32 @@ endif()
 
 # System imported libraries
 # =======================================================================
+
+# Set runtime library to MD/MDd for all configurations.
+# This MUST run before CPM dependencies are configured below: CMAKE_MSVC_RUNTIME_LIBRARY
+# is captured per-target at add_library()/add_executable() time (CMP0091), not
+# re-evaluated later. Some CPM packages (e.g. SDL2) have their own
+# `if(NOT DEFINED CMAKE_MSVC_RUNTIME_LIBRARY)` fallback that bakes in a
+# different (static) default if this variable isn't already set by the time
+# their CMakeLists.txt runs -- so this has to be set before include(dependencies.cmake),
+# not after it.
+if(MSVC)
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
+
+    # Force all projects (including external dependencies) to use the same runtime
+    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /MD")
+    set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} /MDd")
+    set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} /MD")
+    set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} /MDd")
+
+    # Add this to ensure Cubeb uses the same runtime
+    add_compile_options(
+        $<$<CONFIG:Debug>:/MDd>
+        $<$<CONFIG:Release>:/MD>
+        $<$<CONFIG:RelWithDebInfo>:/MD>
+        $<$<CONFIG:MinSizeRel>:/MD>
+    )
+endif()
 
 # ── CPM (Clangtron / cross-compile builds) ───────────────────────────────────
 # When CITRON_USE_CPM is ON, fetch all dependencies via CPM.cmake at configure
@@ -884,25 +910,6 @@ if (NOT APPLE AND NOT MSVC AND (CMAKE_CXX_COMPILER_ID MATCHES "Clang" OR (CITRON
         message(NOTICE "Selecting lld as linker")
         add_link_options("-fuse-ld=lld")
     endif()
-endif()
-
-# Set runtime library to MD/MDd for all configurations
-if(MSVC)
-    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
-
-    # Force all projects (including external dependencies) to use the same runtime
-    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /MD")
-    set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} /MDd")
-    set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} /MD")
-    set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} /MDd")
-
-    # Add this to ensure Cubeb uses the same runtime
-    add_compile_options(
-        $<$<CONFIG:Debug>:/MDd>
-        $<$<CONFIG:Release>:/MD>
-        $<$<CONFIG:RelWithDebInfo>:/MD>
-        $<$<CONFIG:MinSizeRel>:/MD>
-    )
 endif()
 
 add_subdirectory(src)
