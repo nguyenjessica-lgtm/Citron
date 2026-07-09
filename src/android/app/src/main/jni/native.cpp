@@ -81,6 +81,57 @@
 #define jconst [[maybe_unused]] const auto
 #define jauto [[maybe_unused]] auto
 
+namespace {
+
+std::function<bool(size_t, size_t)> CreateLongProgressCallback(JNIEnv* env, jobject jcallback) {
+    if (jcallback == nullptr) {
+        return [](size_t, size_t) { return true; };
+    }
+
+    const auto jlambda_class = env->GetObjectClass(jcallback);
+    const auto jlambda_invoke_method = env->GetMethodID(
+        jlambda_class, "invoke", "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;");
+    env->DeleteLocalRef(jlambda_class);
+
+    const auto jlong_class = env->FindClass("java/lang/Long");
+    const auto jlong_value_of =
+        env->GetStaticMethodID(jlong_class, "valueOf", "(J)Ljava/lang/Long;");
+
+    return [env, jcallback, jlambda_invoke_method, jlong_class,
+            jlong_value_of](size_t max, size_t progress) {
+        const auto jmax =
+            env->CallStaticObjectMethod(jlong_class, jlong_value_of, static_cast<jlong>(max));
+        const auto jprogress = env->CallStaticObjectMethod(
+            jlong_class, jlong_value_of, static_cast<jlong>(progress));
+
+        const auto jwas_cancelled =
+            env->CallObjectMethod(jcallback, jlambda_invoke_method, jmax, jprogress);
+
+        if (jmax != nullptr) {
+            env->DeleteLocalRef(jmax);
+        }
+        if (jprogress != nullptr) {
+            env->DeleteLocalRef(jprogress);
+        }
+
+        if (env->ExceptionCheck()) {
+            LOG_ERROR(Frontend, "Progress callback threw an exception; cancelling operation");
+            env->ExceptionClear();
+            return true;
+        }
+
+        if (jwas_cancelled == nullptr) {
+            return false;
+        }
+
+        const bool was_cancelled = Common::Android::GetJBoolean(env, jwas_cancelled);
+        env->DeleteLocalRef(jwas_cancelled);
+        return was_cancelled;
+    };
+}
+
+} // namespace
+
 static EmulationSession s_instance;
 
 EmulationSession::EmulationSession() {
@@ -527,7 +578,7 @@ void Java_org_citron_citron_1emu_NativeLibrary_setAppDirectory(JNIEnv* env, jobj
 }
 
 int Java_org_citron_citron_1emu_NativeLibrary_installFileToNand(JNIEnv* env, jobject instance,
-                                                            jstring j_file, jobject jcallback) {
+                                                              jstring j_file, jobject jcallback) {
     auto jlambdaClass = env->GetObjectClass(jcallback);
     auto jlambdaInvokeMethod = env->GetMethodID(
         jlambdaClass, "invoke", "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;");
@@ -970,21 +1021,21 @@ void Java_org_citron_citron_1emu_NativeLibrary_removeMod(JNIEnv* env, jobject jo
 }
 
 jobjectArray Java_org_citron_citron_1emu_NativeLibrary_verifyInstalledContents(JNIEnv* env,
-                                                                           jobject jobj,
-                                                                           jobject jcallback) {
-    auto jlambdaClass = env->GetObjectClass(jcallback);
-    auto jlambdaInvokeMethod = env->GetMethodID(
-        jlambdaClass, "invoke", "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;");
-    const auto callback = [env, jcallback, jlambdaInvokeMethod](size_t max, size_t progress) {
-        auto jwasCancelled = env->CallObjectMethod(jcallback, jlambdaInvokeMethod,
-                                                   Common::Android::ToJDouble(env, max),
-                                                   Common::Android::ToJDouble(env, progress));
-        return Common::Android::GetJBoolean(env, jwasCancelled);
-    };
+                                                                            jobject jobj,
+                                                                            jobject jcallback) {
+    const auto callback = CreateLongProgressCallback(env, jcallback);
 
     auto& session = EmulationSession::GetInstance();
+    auto* content_provider = session.GetContentProvider();
+    if (content_provider == nullptr) {
+        LOG_ERROR(Frontend, "Cannot verify installed contents before content provider is initialized");
+        const auto message =
+            Common::Android::ToJString(env, "Content provider is not initialized");
+        return env->NewObjectArray(1, Common::Android::GetStringClass(), message);
+    }
+
     std::vector<std::string> result = ContentManager::VerifyInstalledContents(
-        session.System(), *session.GetContentProvider(), callback);
+        session.System(), *content_provider, callback);
     jobjectArray jresult = env->NewObjectArray(result.size(), Common::Android::GetStringClass(),
                                                Common::Android::ToJString(env, ""));
     for (size_t i = 0; i < result.size(); ++i) {
@@ -994,30 +1045,14 @@ jobjectArray Java_org_citron_citron_1emu_NativeLibrary_verifyInstalledContents(J
 }
 
 jint Java_org_citron_citron_1emu_NativeLibrary_verifyGameContents(JNIEnv* env, jobject jobj,
-                                                              jstring jpath, jobject jcallback) {
-    auto jlambdaClass = env->GetObjectClass(jcallback);
-    auto jlambdaInvokeMethod = env->GetMethodID(
-        jlambdaClass, "invoke", "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;");
-
-    jclass jLongClass = env->FindClass("java/lang/Long");
-    jmethodID jLongValueOf = env->GetStaticMethodID(jLongClass, "valueOf", "(J)Ljava/lang/Long;");
-
-    const auto callback = [env, jcallback, jlambdaInvokeMethod, jLongClass, jLongValueOf](size_t max, size_t progress) {
-        jobject jmax = env->CallStaticObjectMethod(jLongClass, jLongValueOf, static_cast<jlong>(max));
-        jobject jprogress = env->CallStaticObjectMethod(jLongClass, jLongValueOf, static_cast<jlong>(progress));
-
-        jobject jwasCancelled = env->CallObjectMethod(jcallback, jlambdaInvokeMethod, jmax, jprogress);
-        
-        env->DeleteLocalRef(jmax);
-        env->DeleteLocalRef(jprogress);
-
-        if (jwasCancelled == nullptr) {
-            return false;
-        }
-
-        return Common::Android::GetJBoolean(env, jwasCancelled);
-    };
+                                                               jstring jpath, jobject jcallback) {
+    const auto callback = CreateLongProgressCallback(env, jcallback);
     auto& session = EmulationSession::GetInstance();
+    if (session.System().GetFilesystem() == nullptr) {
+        LOG_ERROR(Frontend, "Cannot verify game contents before filesystem is initialized");
+        return static_cast<jint>(ContentManager::GameVerificationResult::NotImplemented);
+    }
+
     return static_cast<jint>(ContentManager::VerifyGameContents(
         session.System(), Common::Android::GetJString(env, jpath), callback));
 }
