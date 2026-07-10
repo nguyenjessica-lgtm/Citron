@@ -268,43 +268,56 @@ GraphicsPipeline::GraphicsPipeline(
         num_textures += Shader::NumDescriptors(info->texture_descriptors);
     }
     auto func{[this, shader_notify, &render_pass_cache, &descriptor_pool, pipeline_statistics] {
-        DescriptorLayoutBuilder builder{MakeBuilder(device, stage_infos)};
-        split_descriptor_sets = builder.IsSplit();
-        // In split mode set 0 (uniforms) is always pushed; in single-set mode we
-        // fall back to the original "push if everything fits" check.
-        uses_push_descriptor =
-            split_descriptor_sets ? device.IsKhrPushDescriptorSupported() : builder.CanUsePushDescriptor();
-        descriptor_set_layout = builder.CreateDescriptorSetLayout(uses_push_descriptor);
-        if (split_descriptor_sets) {
-            resource_set_layout = builder.CreateResourceSetLayout();
-        }
-        if (!uses_push_descriptor && descriptor_set_layout) {
-            descriptor_allocator = descriptor_pool.Allocator(*descriptor_set_layout, stage_infos);
-        }
-        if (resource_set_layout) {
-            resource_descriptor_allocator =
-                descriptor_pool.Allocator(*resource_set_layout, stage_infos);
-        }
-        const VkDescriptorSetLayout set_layout{*descriptor_set_layout};
-        const VkDescriptorSetLayout res_layout{resource_set_layout ? *resource_set_layout : VK_NULL_HANDLE};
-        pipeline_layout = builder.CreatePipelineLayout(set_layout, res_layout);
-        descriptor_update_template =
-            builder.CreateTemplate(set_layout, *pipeline_layout, uses_push_descriptor);
-        if (resource_set_layout) {
-            resource_update_template =
-                builder.CreateResourceTemplate(res_layout, *pipeline_layout);
+        try {
+            DescriptorLayoutBuilder builder{MakeBuilder(device, stage_infos)};
+            split_descriptor_sets = builder.IsSplit();
+            // In split mode set 0 (uniforms) is always pushed; in single-set mode we
+            // fall back to the original "push if everything fits" check.
+            uses_push_descriptor = split_descriptor_sets ? device.IsKhrPushDescriptorSupported()
+                                                         : builder.CanUsePushDescriptor();
+            descriptor_set_layout = builder.CreateDescriptorSetLayout(uses_push_descriptor);
+            if (split_descriptor_sets) {
+                resource_set_layout = builder.CreateResourceSetLayout();
+            }
+            if (!uses_push_descriptor && descriptor_set_layout) {
+                descriptor_allocator = descriptor_pool.Allocator(*descriptor_set_layout, stage_infos);
+            }
+            if (resource_set_layout) {
+                resource_descriptor_allocator =
+                    descriptor_pool.Allocator(*resource_set_layout, stage_infos);
+            }
+            const VkDescriptorSetLayout set_layout{*descriptor_set_layout};
+            const VkDescriptorSetLayout res_layout{
+                resource_set_layout ? *resource_set_layout : VK_NULL_HANDLE};
+            pipeline_layout = builder.CreatePipelineLayout(set_layout, res_layout);
+            descriptor_update_template =
+                builder.CreateTemplate(set_layout, *pipeline_layout, uses_push_descriptor);
+            if (resource_set_layout) {
+                resource_update_template =
+                    builder.CreateResourceTemplate(res_layout, *pipeline_layout);
+            }
+
+            const VkRenderPass render_pass{render_pass_cache.Get(MakeRenderPassKey(key.state))};
+            Validate();
+            MakePipeline(render_pass);
+            if (pipeline_statistics) {
+                pipeline_statistics->Collect(*pipeline);
+            }
+        } catch (const vk::Exception& exception) {
+            LOG_ERROR(Render_Vulkan, "Graphics pipeline build failed: hash={:016X}, exception={}",
+                      key.Hash(), exception.what());
+            build_failed = true;
+        } catch (const std::exception& exception) {
+            LOG_ERROR(Render_Vulkan, "Graphics pipeline build failed: hash={:016X}, exception={}",
+                      key.Hash(), exception.what());
+            build_failed = true;
         }
 
-        const VkRenderPass render_pass{render_pass_cache.Get(MakeRenderPassKey(key.state))};
-        Validate();
-        MakePipeline(render_pass);
-        if (pipeline_statistics) {
-            pipeline_statistics->Collect(*pipeline);
+        {
+            std::scoped_lock lock{build_mutex};
+            is_built = true;
         }
-
-        std::scoped_lock lock{build_mutex};
-        is_built = true;
-        build_condvar.notify_one();
+        build_condvar.notify_all();
         if (shader_notify) {
             shader_notify->MarkShaderComplete();
         }
@@ -591,13 +604,6 @@ void GraphicsPipeline::ConfigureDraw(const RescalingPushConstant& rescaling,
                                      const RenderAreaPushConstant& render_area) {
     scheduler.RequestRenderpass(texture_cache.GetFramebuffer());
 
-    if (!is_built.load(std::memory_order::relaxed)) {
-        // Wait for the pipeline to be built
-        scheduler.Record([this](vk::CommandBuffer) {
-            std::unique_lock lock{build_mutex};
-            build_condvar.wait(lock, [this] { return is_built.load(std::memory_order::relaxed); });
-        });
-    }
     const bool is_rescaling{texture_cache.IsRescaling()};
     const bool update_rescaling{scheduler.UpdateRescaling(is_rescaling)};
     const bool bind_pipeline{scheduler.UpdateGraphicsPipeline(this)};
@@ -605,8 +611,15 @@ void GraphicsPipeline::ConfigureDraw(const RescalingPushConstant& rescaling,
     const size_t upload_entries{guest_descriptor_queue.GetUploadSize()};
     scheduler.Record([this, descriptor_data, upload_entries, bind_pipeline,
                       rescaling_data = rescaling.Data(), is_rescaling, update_rescaling,
-                      uses_render_area = render_area.uses_render_area,
-                      render_area_data = render_area.words](vk::CommandBuffer cmdbuf) {
+                       uses_render_area = render_area.uses_render_area,
+                       render_area_data = render_area.words](vk::CommandBuffer cmdbuf) {
+        if (!is_built.load(std::memory_order::relaxed)) {
+            std::unique_lock lock{build_mutex};
+            build_condvar.wait(lock, [this] { return is_built.load(std::memory_order::relaxed); });
+        }
+        if (build_failed.load(std::memory_order::relaxed)) {
+            return;
+        }
         if (bind_pipeline) {
             cmdbuf.BindPipeline(VK_PIPELINE_BIND_POINT_GRAPHICS, *pipeline);
         }

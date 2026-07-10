@@ -718,6 +718,9 @@ GraphicsPipeline* PipelineCache::CurrentGraphicsPipelineSlowPath() {
 }
 
 GraphicsPipeline* PipelineCache::BuiltPipeline(GraphicsPipeline* pipeline) const noexcept {
+    if (pipeline->IsFailed()) {
+        return nullptr;
+    }
     if (pipeline->IsBuilt()) {
         return pipeline;
     }
