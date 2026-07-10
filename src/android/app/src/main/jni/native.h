@@ -18,7 +18,7 @@
 class EmulationSession final {
 public:
     explicit EmulationSession();
-    ~EmulationSession() = default;
+    ~EmulationSession();
 
     static EmulationSession& GetInstance();
     const Core::System& System() const;
@@ -38,6 +38,7 @@ public:
 
     bool IsRunning() const;
     bool IsPaused() const;
+    bool IsNetworkInitialized() const;
     void PauseEmulation();
     void UnPauseEmulation();
     void HaltEmulation();
@@ -82,6 +83,7 @@ private:
     Core::SystemResultStatus m_load_result{Core::SystemResultStatus::ErrorNotInitialized};
     std::atomic<bool> m_is_running = false;
     std::atomic<bool> m_is_paused = false;
+    bool m_network_initialized{};
     Common::Android::SoftwareKeyboard::AndroidKeyboard* m_software_keyboard{};
     std::unique_ptr<FileSys::ManualContentProvider> m_manual_provider;
     int m_applet_id{1};
