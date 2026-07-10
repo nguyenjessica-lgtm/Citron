@@ -292,10 +292,10 @@ size_t Patcher::GetSectionSize() const noexcept {
 
 bool Patcher::CanRelocateBranches() const noexcept {
     if (modules.empty() || mode == PatchMode::None) {
-        LOG_CRITICAL(Core_ARM,
-                     "NCE branch relocation preflight called without patched modules: mode={}, "
-                     "modules={}, total_program_size={:#x}",
-                     mode, modules.size(), total_program_size);
+        LOG_WARNING(Core_ARM,
+                    "NCE branch relocation preflight called without patched modules: mode={}, "
+                    "modules={}, total_program_size={:#x}",
+                    mode, modules.size(), total_program_size);
         return false;
     }
 
@@ -304,27 +304,27 @@ bool Patcher::CanRelocateBranches() const noexcept {
     const auto LogInvalidBranch = [&](const char* kind, size_t module_index,
                                       size_t remaining_program_size,
                                       const Relocation& rel, ptrdiff_t branch_offset) {
-        LOG_CRITICAL(Core_ARM,
-                     "NCE branch relocation preflight failed: kind={}, mode={}, "
-                     "relocate_module={}, modules={}, branch_offset={:#x}, valid_range=[{:#x}, "
-                     "{:#x}], patch_offset={:#x}, module_offset={:#x}, patch_size={:#x}, "
-                     "image_size={:#x}, total_program_size={:#x}",
-                     kind, mode, module_index, modules.size(), branch_offset,
-                     MinRelativeBranchOffset, MaxRelativeBranchOffset, rel.patch_offset,
-                     rel.module_offset, patch_size, modules[module_index].image_size,
-                     remaining_program_size);
+        LOG_WARNING(Core_ARM,
+                    "NCE branch relocation preflight failed: kind={}, mode={}, "
+                    "relocate_module={}, modules={}, branch_offset={:#x}, valid_range=[{:#x}, "
+                    "{:#x}], patch_offset={:#x}, module_offset={:#x}, patch_size={:#x}, "
+                    "image_size={:#x}, total_program_size={:#x}",
+                    kind, mode, module_index, modules.size(), branch_offset,
+                    MinRelativeBranchOffset, MaxRelativeBranchOffset, rel.patch_offset,
+                    rel.module_offset, patch_size, modules[module_index].image_size,
+                    remaining_program_size);
     };
 
     size_t remaining_program_size = total_program_size;
     for (size_t module_index = 0; module_index < modules.size(); module_index++) {
         const auto& patch = modules[module_index];
         if (patch.image_size > remaining_program_size) {
-            LOG_CRITICAL(Core_ARM,
-                         "NCE branch relocation preflight size state mismatch: mode={}, "
-                         "relocate_module={}, modules={}, image_size={:#x}, "
-                         "remaining_program_size={:#x}, total_program_size={:#x}",
-                         mode, module_index, modules.size(), patch.image_size,
-                         remaining_program_size, total_program_size);
+            LOG_WARNING(Core_ARM,
+                        "NCE branch relocation preflight size state mismatch: mode={}, "
+                        "relocate_module={}, modules={}, image_size={:#x}, "
+                        "remaining_program_size={:#x}, total_program_size={:#x}",
+                        mode, module_index, modules.size(), patch.image_size,
+                        remaining_program_size, total_program_size);
             return false;
         }
 
@@ -354,10 +354,10 @@ bool Patcher::CanRelocateBranches() const noexcept {
     }
 
     if (remaining_program_size != 0) {
-        LOG_CRITICAL(Core_ARM,
-                     "NCE branch relocation preflight size state mismatch after scan: mode={}, "
-                     "modules={}, remaining_program_size={:#x}, total_program_size={:#x}",
-                     mode, modules.size(), remaining_program_size, total_program_size);
+        LOG_WARNING(Core_ARM,
+                    "NCE branch relocation preflight size state mismatch after scan: mode={}, "
+                    "modules={}, remaining_program_size={:#x}, total_program_size={:#x}",
+                    mode, modules.size(), remaining_program_size, total_program_size);
         return false;
     }
 
