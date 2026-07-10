@@ -44,10 +44,12 @@ struct CheatPatch {
     bool enabled;
     std::string name;
     std::string build_id;
+    std::string source;
 };
 
 [[nodiscard]] std::string NormalizeCheatBuildId(std::string build_id);
 [[nodiscard]] std::string GetCheatBuildId(const std::array<u8, 0x20>& build_id);
+[[nodiscard]] std::string GetCheatConfigKey(std::string_view source, std::string_view name);
 
 // A centralized class to manage patches to games.
 class PatchManager {

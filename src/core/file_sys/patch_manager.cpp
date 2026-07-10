@@ -57,6 +57,11 @@ const ContentProviderUnion* GetUnionProvider(const ContentProvider& p) {
 constexpr u32 SINGLE_BYTE_MODULUS = 0x100;
 constexpr std::size_t CHEAT_BUILD_ID_LENGTH = sizeof(u64) * 2;
 
+struct CheatMod {
+    VirtualDir directory;
+    std::string identifier;
+};
+
 enum class TitleVersionFormat : u8 {
     ThreeElements, ///< vX.Y.Z
     FourElements,  ///< vX.Y.Z.W
@@ -126,8 +131,22 @@ std::string GetCheatName(const Core::Memory::CheatEntry& cheat) {
     return std::string(name.data(), length);
 }
 
+bool IsCheatModDisabled(u64 title_id, std::string_view mod_identifier) {
+    const auto& disabled_addons = Settings::values.disabled_addons[title_id];
+    if (std::find(disabled_addons.begin(), disabled_addons.end(), mod_identifier) !=
+        disabled_addons.end()) {
+        return true;
+    }
+
+    const auto separator = mod_identifier.find_last_of('/');
+    return separator != std::string_view::npos &&
+           std::find(disabled_addons.begin(), disabled_addons.end(),
+                     mod_identifier.substr(separator + 1)) != disabled_addons.end();
+}
+
 void ApplyDisabledCheats(std::vector<Core::Memory::CheatEntry>& cheats,
-                         const std::string& build_id) {
+                         const std::string& build_id, std::string_view source,
+                         bool mod_disabled) {
     const auto normalized_build_id = NormalizeCheatBuildId(build_id);
     auto disabled_it = Settings::values.disabled_cheats.find(normalized_build_id);
     if (disabled_it == Settings::values.disabled_cheats.end()) {
@@ -137,14 +156,15 @@ void ApplyDisabledCheats(std::vector<Core::Memory::CheatEntry>& cheats,
                                        return NormalizeCheatBuildId(entry.first) ==
                                               normalized_build_id;
                                    });
-        if (disabled_it == Settings::values.disabled_cheats.end()) {
-            return;
-        }
     }
 
-    const auto& disabled = disabled_it->second;
     for (auto& cheat : cheats) {
-        if (disabled.contains(GetCheatName(cheat))) {
+        const auto cheat_name = GetCheatName(cheat);
+        if (mod_disabled ||
+            (disabled_it != Settings::values.disabled_cheats.end() &&
+             (disabled_it->second.contains(GetCheatConfigKey(source, cheat_name)) ||
+              // Keep configs written before source-specific cheat keys working.
+              disabled_it->second.contains(cheat_name)))) {
             cheat.enabled = false;
         }
     }
@@ -206,9 +226,9 @@ std::vector<VirtualDir> GetEnabledModsList(
     return mods;
 }
 
-std::vector<VirtualDir> GetCheatModsList(
+std::vector<CheatMod> GetCheatModsList(
     u64 title_id, const Service::FileSystem::FileSystemController& fs_controller) {
-    std::vector<VirtualDir> mods;
+    std::vector<CheatMod> mods;
     const auto load_dir = fs_controller.GetModificationLoadRoot(title_id);
     if (!load_dir) {
         return mods;
@@ -220,13 +240,14 @@ std::vector<VirtualDir> GetCheatModsList(
         }
 
         if (FindSubdirectoryCaseless(top_dir, "cheats") != nullptr) {
-            mods.push_back(top_dir);
+            mods.push_back({.directory = top_dir, .identifier = top_dir->GetName()});
             continue;
         }
 
         for (const auto& sub_dir : top_dir->GetSubdirectories()) {
             if (sub_dir && FindSubdirectoryCaseless(sub_dir, "cheats") != nullptr) {
-                mods.push_back(sub_dir);
+                mods.push_back({.directory = sub_dir,
+                                .identifier = top_dir->GetName() + "/" + sub_dir->GetName()});
             }
         }
     }
@@ -237,8 +258,8 @@ bool IsDirValidAndNonEmpty(const VirtualDir& dir) {
     return dir != nullptr && (!dir->GetFiles().empty() || !dir->GetSubdirectories().empty());
 }
 
-void AppendCheatsFromMod(std::vector<CheatPatch>& out, const VirtualDir& mod_dir) {
-    const auto cheats_dir = FindSubdirectoryCaseless(mod_dir, "cheats");
+void AppendCheatsFromMod(std::vector<CheatPatch>& out, u64 title_id, const CheatMod& mod) {
+    const auto cheats_dir = FindSubdirectoryCaseless(mod.directory, "cheats");
     if (cheats_dir == nullptr) {
         return;
     }
@@ -259,10 +280,12 @@ void AppendCheatsFromMod(std::vector<CheatPatch>& out, const VirtualDir& mod_dir
         if (extension_pos != std::string::npos) {
             build_id = build_id.substr(0, extension_pos);
         }
-        if (build_id.size() < CHEAT_BUILD_ID_LENGTH) {
+        if (build_id.size() != CHEAT_BUILD_ID_LENGTH ||
+            !std::all_of(build_id.cbegin(), build_id.cend(),
+                         [](unsigned char c) { return std::isxdigit(c) != 0; })) {
             continue;
         }
-        build_id = NormalizeCheatBuildId(build_id.substr(0, CHEAT_BUILD_ID_LENGTH));
+        build_id = NormalizeCheatBuildId(build_id);
 
         std::vector<u8> data(file->GetSize());
         if (file->Read(data.data(), data.size()) != data.size()) {
@@ -272,7 +295,9 @@ void AppendCheatsFromMod(std::vector<CheatPatch>& out, const VirtualDir& mod_dir
 
         auto cheats =
             parser.Parse(std::string_view(reinterpret_cast<const char*>(data.data()), data.size()));
-        ApplyDisabledCheats(cheats, build_id);
+        const auto source = mod.identifier + "/" + file->GetName();
+        ApplyDisabledCheats(cheats, build_id, source,
+                            IsCheatModDisabled(title_id, mod.identifier));
         for (const auto& cheat : cheats) {
             if (cheat.definition.num_opcodes == 0) {
                 continue;
@@ -283,8 +308,10 @@ void AppendCheatsFromMod(std::vector<CheatPatch>& out, const VirtualDir& mod_dir
                 continue;
             }
 
-            out.push_back(
-                {.enabled = cheat.enabled, .name = cheat_name, .build_id = build_id});
+            out.push_back({.enabled = cheat.enabled,
+                           .name = cheat_name,
+                           .build_id = build_id,
+                           .source = source});
         }
     }
 }
@@ -298,6 +325,10 @@ std::string NormalizeCheatBuildId(std::string build_id) {
 
 std::string GetCheatBuildId(const std::array<u8, 0x20>& build_id) {
     return NormalizeCheatBuildId(Common::HexToString(build_id).substr(0, CHEAT_BUILD_ID_LENGTH));
+}
+
+std::string GetCheatConfigKey(std::string_view source, std::string_view name) {
+    return fmt::format("{}:{}{}", source.size(), source, name);
 }
 
 
@@ -513,25 +544,35 @@ bool PatchManager::HasNSOPatch(const BuildID& build_id_, std::string_view name) 
 std::vector<Core::Memory::CheatEntry> PatchManager::CreateCheatList(
     const BuildID& build_id_) const {
 
-    std::vector<VirtualDir> patch_dirs = GetCheatModsList(title_id, fs_controller);
+    std::vector<CheatMod> patch_dirs = GetCheatModsList(title_id, fs_controller);
     const auto build_id = GetCheatBuildId(build_id_);
 
     std::sort(patch_dirs.begin(), patch_dirs.end(),
-              [](const VirtualDir& l, const VirtualDir& r) { return l->GetName() < r->GetName(); });
+              [](const CheatMod& l, const CheatMod& r) { return l.identifier < r.identifier; });
 
     std::vector<Core::Memory::CheatEntry> out;
-    for (const auto& subdir : patch_dirs) {
-        auto cheats_dir = FindSubdirectoryCaseless(subdir, "cheats");
+    for (const auto& mod : patch_dirs) {
+        auto cheats_dir = FindSubdirectoryCaseless(mod.directory, "cheats");
         if (cheats_dir != nullptr) {
             if (const auto res = ReadCheatFileFromFolder(title_id, build_id_, cheats_dir, true)) {
                 auto cheats = *res;
-                ApplyDisabledCheats(cheats, build_id);
+                ApplyDisabledCheats(
+                    cheats, build_id,
+                    mod.identifier + "/" + Common::HexToString(build_id_, true).substr(
+                                               0, CHEAT_BUILD_ID_LENGTH) +
+                        ".txt",
+                    IsCheatModDisabled(title_id, mod.identifier));
                 std::copy(cheats.begin(), cheats.end(), std::back_inserter(out));
                 continue;
             }
             if (const auto res = ReadCheatFileFromFolder(title_id, build_id_, cheats_dir, false)) {
                 auto cheats = *res;
-                ApplyDisabledCheats(cheats, build_id);
+                ApplyDisabledCheats(
+                    cheats, build_id,
+                    mod.identifier + "/" + Common::HexToString(build_id_, false).substr(
+                                               0, CHEAT_BUILD_ID_LENGTH) +
+                        ".txt",
+                    IsCheatModDisabled(title_id, mod.identifier));
                 std::copy(cheats.begin(), cheats.end(), std::back_inserter(out));
             }
         }
@@ -1002,13 +1043,13 @@ std::vector<Patch> PatchManager::GetPatches(VirtualFile update_raw) const {
 }
 
 std::vector<CheatPatch> PatchManager::GetCheats() const {
-    std::vector<VirtualDir> patch_dirs = GetCheatModsList(title_id, fs_controller);
+    std::vector<CheatMod> patch_dirs = GetCheatModsList(title_id, fs_controller);
     std::sort(patch_dirs.begin(), patch_dirs.end(),
-              [](const VirtualDir& l, const VirtualDir& r) { return l->GetName() < r->GetName(); });
+              [](const CheatMod& l, const CheatMod& r) { return l.identifier < r.identifier; });
 
     std::vector<CheatPatch> out;
-    for (const auto& subdir : patch_dirs) {
-        AppendCheatsFromMod(out, subdir);
+    for (const auto& mod : patch_dirs) {
+        AppendCheatsFromMod(out, title_id, mod);
     }
 
     return out;
@@ -1023,7 +1064,8 @@ std::vector<CheatPatch> PatchManager::GetCheatsForMod(std::string_view mod_name)
 
     const auto mod_dir = load_dir->GetSubdirectory(mod_name);
     if (mod_dir != nullptr) {
-        AppendCheatsFromMod(out, mod_dir);
+        AppendCheatsFromMod(out, title_id,
+                            {.directory = mod_dir, .identifier = std::string{mod_name}});
     }
     return out;
 }

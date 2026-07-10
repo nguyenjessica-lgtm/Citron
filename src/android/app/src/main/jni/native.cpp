@@ -914,16 +914,17 @@ jobjectArray Java_org_citron_citron_1emu_NativeLibrary_getCheatsForFile(JNIEnv* 
     const FileSys::PatchManager pm{program_id, system.GetFileSystemController(),
                                    system.GetContentProvider()};
     const auto* cheat_engine = system.GetCheatEngine();
-    const auto active_build_id = cheat_engine == nullptr
-                                     ? std::string{}
-                                     : FileSys::GetCheatBuildId(cheat_engine->GetBuildId());
+    if (cheat_engine == nullptr) {
+        return env->NewObjectArray(0, Common::Android::GetPatchClass(), nullptr);
+    }
+    const auto active_build_id = FileSys::GetCheatBuildId(cheat_engine->GetBuildId());
 
     const auto cheats = pm.GetCheats();
     std::vector<FileSys::CheatPatch> active_cheats;
     active_cheats.reserve(cheats.size());
     std::copy_if(cheats.begin(), cheats.end(), std::back_inserter(active_cheats),
                  [&active_build_id](const FileSys::CheatPatch& cheat) {
-                     return active_build_id.empty() || cheat.build_id == active_build_id;
+                     return cheat.build_id == active_build_id;
                  });
 
     jobjectArray jpatchArray =
@@ -931,7 +932,7 @@ jobjectArray Java_org_citron_citron_1emu_NativeLibrary_getCheatsForFile(JNIEnv* 
     int i = 0;
     for (const auto& cheat : active_cheats) {
         const auto jname = Common::Android::ToJString(env, cheat.name);
-        const auto jversion = Common::Android::ToJString(env, fmt::format("Cheat {}", cheat.build_id));
+        const auto jversion = Common::Android::ToJString(env, cheat.source);
         const auto jpatchProgramId = Common::Android::ToJString(env, std::to_string(program_id));
         const auto jbuildId = Common::Android::ToJString(env, cheat.build_id);
         jobject jpatch = env->NewObject(
@@ -950,24 +951,28 @@ jobjectArray Java_org_citron_citron_1emu_NativeLibrary_getCheatsForFile(JNIEnv* 
 }
 
 void Java_org_citron_citron_1emu_NativeLibrary_setCheatEnabled(JNIEnv* env, jobject jobj,
-                                                           jstring jbuildId, jstring jname,
-                                                           jboolean jenabled) {
+                                                           jstring jbuildId, jstring jsource,
+                                                           jstring jname, jboolean jenabled) {
     const auto build_id =
         FileSys::NormalizeCheatBuildId(Common::Android::GetJString(env, jbuildId));
+    const auto source = Common::Android::GetJString(env, jsource);
     const auto name = Common::Android::GetJString(env, jname);
 
-    if (build_id.empty() || name.empty()) {
+    if (build_id.empty() || source.empty() || name.empty()) {
         return;
     }
 
     auto& disabled_cheats = Settings::values.disabled_cheats[build_id];
+    const auto cheat_key = FileSys::GetCheatConfigKey(source, name);
     if (jenabled) {
+        disabled_cheats.erase(cheat_key);
+        // Migrate the old build-ID/name-only state when the user changes this cheat.
         disabled_cheats.erase(name);
         if (disabled_cheats.empty()) {
             Settings::values.disabled_cheats.erase(build_id);
         }
     } else {
-        disabled_cheats.insert(name);
+        disabled_cheats.insert(cheat_key);
     }
 }
 
@@ -981,7 +986,8 @@ void Java_org_citron_citron_1emu_NativeLibrary_disableCheatsForAddon(JNIEnv* env
                                    system.GetContentProvider()};
 
     for (const auto& cheat : pm.GetCheatsForMod(addon_name)) {
-        Settings::values.disabled_cheats[cheat.build_id].insert(cheat.name);
+        Settings::values.disabled_cheats[cheat.build_id].insert(
+            FileSys::GetCheatConfigKey(cheat.source, cheat.name));
     }
 }
 

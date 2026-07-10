@@ -829,7 +829,12 @@ class EmulationFragment : Fragment(), SurfaceHolder.Callback {
                     }
 
                     val reloaded = withContext(Dispatchers.IO) {
-                        NativeLibrary.setCheatEnabled(cheat.titleId, cheat.name, enabled)
+                        NativeLibrary.setCheatEnabled(
+                            cheat.titleId,
+                            cheat.version,
+                            cheat.name,
+                            enabled
+                        )
                         NativeConfig.saveGlobalConfig()
                         NativeLibrary.reloadCheats(cheat.programId)
                     }

@@ -410,13 +410,19 @@ object NativeLibrary {
     external fun getCheatsForFile(path: String, programId: String): Array<Patch>?
 
     /**
-     * Enables or disables a single cheat by build ID and readable name.
+     * Enables or disables a single cheat by build ID, source file, and readable name.
      *
      * @param buildId NSO build ID associated with the cheat file
+     * @param source Stable source identifier for the cheat file
      * @param name Readable cheat name
      * @param enabled Whether the cheat should be enabled
      */
-    external fun setCheatEnabled(buildId: String, name: String, enabled: Boolean)
+    external fun setCheatEnabled(
+        buildId: String,
+        source: String,
+        name: String,
+        enabled: Boolean
+    )
 
     /**
      * Initializes all cheats in an installed addon as disabled.
