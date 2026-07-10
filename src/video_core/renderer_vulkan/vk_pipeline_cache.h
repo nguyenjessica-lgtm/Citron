@@ -164,6 +164,8 @@ public:
 
     std::unordered_map<ComputePipelineCacheKey, std::unique_ptr<ComputePipeline>> compute_cache;
     std::unordered_map<GraphicsPipelineCacheKey, std::unique_ptr<GraphicsPipeline>> graphics_cache;
+    // Keep replaced failed pipelines alive for stale transition edges and async build cleanup.
+    std::vector<std::unique_ptr<GraphicsPipeline>> retired_graphics_pipelines;
 
     std::unordered_map<const GraphicsPipeline*, u64> graphics_pipeline_last_use;
     std::unordered_map<const ComputePipeline*, u64> compute_pipeline_last_use;

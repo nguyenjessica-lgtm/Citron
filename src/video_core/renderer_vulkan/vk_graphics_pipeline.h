@@ -100,11 +100,11 @@ public:
     }
 
     [[nodiscard]] bool IsBuilt() const noexcept {
-        return is_built.load(std::memory_order::relaxed);
+        return is_built.load(std::memory_order::acquire);
     }
 
     [[nodiscard]] bool IsFailed() const noexcept {
-        return build_failed.load(std::memory_order::relaxed);
+        return build_failed.load(std::memory_order::acquire);
     }
 
     template <typename Spec>

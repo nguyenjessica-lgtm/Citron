@@ -306,16 +306,16 @@ GraphicsPipeline::GraphicsPipeline(
         } catch (const vk::Exception& exception) {
             LOG_ERROR(Render_Vulkan, "Graphics pipeline build failed: hash={:016X}, exception={}",
                       key.Hash(), exception.what());
-            build_failed = true;
+            build_failed.store(true, std::memory_order::release);
         } catch (const std::exception& exception) {
             LOG_ERROR(Render_Vulkan, "Graphics pipeline build failed: hash={:016X}, exception={}",
                       key.Hash(), exception.what());
-            build_failed = true;
+            build_failed.store(true, std::memory_order::release);
         }
 
         {
             std::scoped_lock lock{build_mutex};
-            is_built = true;
+            is_built.store(true, std::memory_order::release);
         }
         build_condvar.notify_all();
         if (shader_notify) {
@@ -331,6 +331,11 @@ GraphicsPipeline::GraphicsPipeline(
 }
 
 void GraphicsPipeline::AddTransition(GraphicsPipeline* transition) {
+    const auto it{std::find(transition_keys.begin(), transition_keys.end(), transition->key)};
+    if (it != transition_keys.end()) {
+        transitions[std::distance(transition_keys.begin(), it)] = transition;
+        return;
+    }
     transition_keys.push_back(transition->key);
     transitions.push_back(transition);
 }
@@ -602,6 +607,10 @@ void GraphicsPipeline::ConfigureImpl(bool is_indexed) {
 
 void GraphicsPipeline::ConfigureDraw(const RescalingPushConstant& rescaling,
                                      const RenderAreaPushConstant& render_area) {
+    if (build_failed.load(std::memory_order::acquire)) {
+        return;
+    }
+
     scheduler.RequestRenderpass(texture_cache.GetFramebuffer());
 
     const bool is_rescaling{texture_cache.IsRescaling()};
@@ -611,13 +620,13 @@ void GraphicsPipeline::ConfigureDraw(const RescalingPushConstant& rescaling,
     const size_t upload_entries{guest_descriptor_queue.GetUploadSize()};
     scheduler.Record([this, descriptor_data, upload_entries, bind_pipeline,
                       rescaling_data = rescaling.Data(), is_rescaling, update_rescaling,
-                       uses_render_area = render_area.uses_render_area,
-                       render_area_data = render_area.words](vk::CommandBuffer cmdbuf) {
-        if (!is_built.load(std::memory_order::relaxed)) {
+                      uses_render_area = render_area.uses_render_area,
+                      render_area_data = render_area.words](vk::CommandBuffer cmdbuf) {
+        if (!is_built.load(std::memory_order::acquire)) {
             std::unique_lock lock{build_mutex};
-            build_condvar.wait(lock, [this] { return is_built.load(std::memory_order::relaxed); });
+            build_condvar.wait(lock, [this] { return is_built.load(std::memory_order::acquire); });
         }
-        if (build_failed.load(std::memory_order::relaxed)) {
+        if (build_failed.load(std::memory_order::acquire)) {
             return;
         }
         if (bind_pipeline) {

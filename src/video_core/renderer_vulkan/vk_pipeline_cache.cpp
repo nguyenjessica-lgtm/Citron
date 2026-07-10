@@ -530,6 +530,13 @@ GraphicsPipeline* PipelineCache::CurrentGraphicsPipeline() {
     if (current_pipeline) {
         GraphicsPipeline* const next{current_pipeline->Next(graphics_key)};
         if (next) {
+            if (next->IsFailed()) {
+                GraphicsPipeline* result = CurrentGraphicsPipelineSlowPath();
+                if (result) {
+                    graphics_pipeline_last_use[result] = scheduler.CurrentTick();
+                }
+                return result;
+            }
             current_pipeline = next;
             // Update last use frame
             graphics_pipeline_last_use[current_pipeline] = scheduler.CurrentTick();
@@ -704,14 +711,23 @@ void PipelineCache::LoadDiskResources(u64 title_id, std::stop_token stop_loading
 GraphicsPipeline* PipelineCache::CurrentGraphicsPipelineSlowPath() {
     const auto [pair, is_new]{graphics_cache.try_emplace(graphics_key)};
     auto& pipeline{pair->second};
-    if (is_new) {
+    GraphicsPipeline* transition_source = current_pipeline;
+    if (!is_new && pipeline && pipeline->IsFailed()) {
+        graphics_pipeline_last_use.erase(pipeline.get());
+        if (current_pipeline == pipeline.get()) {
+            current_pipeline = nullptr;
+            transition_source = nullptr;
+        }
+        retired_graphics_pipelines.push_back(std::move(pipeline));
+    }
+    if (is_new || !pipeline) {
         pipeline = CreateGraphicsPipeline();
     }
     if (!pipeline) {
         return nullptr;
     }
-    if (current_pipeline) {
-        current_pipeline->AddTransition(pipeline.get());
+    if (transition_source && transition_source != pipeline.get()) {
+        transition_source->AddTransition(pipeline.get());
     }
     current_pipeline = pipeline.get();
     return BuiltPipeline(current_pipeline);
