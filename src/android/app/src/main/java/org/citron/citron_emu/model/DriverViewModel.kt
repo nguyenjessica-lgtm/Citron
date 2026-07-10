@@ -73,8 +73,8 @@ class DriverViewModel : ViewModel() {
             Driver(
                 selectedDriver == GpuDriverMetadata(),
                 CitronApplication.appContext.getString(R.string.system_gpu_driver),
-                systemDriverData?.get(0) ?: "",
-                systemDriverData?.get(1) ?: ""
+                systemDriverData?.getOrNull(0) ?: "",
+                systemDriverData?.getOrNull(1) ?: ""
             )
         )
         driverData.forEach {
