@@ -158,6 +158,18 @@ object NativeLibrary {
     external fun isPaused(): Boolean
 
     /**
+     * Connects to an existing multiplayer room. This can block while ENet performs its handshake,
+     * so callers must invoke it off the main thread.
+     */
+    external fun connectToRoom(nickname: String, host: String, port: Int): Boolean
+
+    /** Returns the current multiplayer room member state. */
+    external fun getRoomConnectionState(): Int
+
+    /** Disconnects from the current multiplayer room. */
+    external fun leaveRoom()
+
+    /**
      * Returns the performance stats for the current game
      */
     external fun getPerfStats(): DoubleArray

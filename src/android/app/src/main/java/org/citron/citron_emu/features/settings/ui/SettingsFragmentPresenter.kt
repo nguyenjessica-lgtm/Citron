@@ -1017,6 +1017,16 @@ class SettingsFragmentPresenter(
         sl.apply {
             add(HeaderSetting(R.string.network_settings_header))
             add(BooleanSetting.AIRPLANE_MODE.key)
+            add(
+                RunnableSetting(
+                    titleId = R.string.direct_connect,
+                    descriptionId = R.string.direct_connect_description,
+                    isRunnable = !NativeLibrary.isRunning(),
+                    iconId = R.drawable.ic_share
+                ) {
+                    settingsViewModel.setShouldShowDirectConnectDialog(true)
+                }
+            )
         }
     }
 

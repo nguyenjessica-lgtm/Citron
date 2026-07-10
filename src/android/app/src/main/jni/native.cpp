@@ -10,6 +10,7 @@
 #include <dlfcn.h>
 #include <functional>
 #include <iterator>
+#include <limits>
 
 #ifdef ARCHITECTURE_arm64
 #include <adrenotools/driver.h>
@@ -56,6 +57,7 @@
 #include "core/hle/service/am/applet_manager.h"
 #include "core/hle/service/am/frontend/applets.h"
 #include "core/hle/service/filesystem/filesystem.h"
+#include "core/internal_network/network_interface.h"
 #include "core/loader/loader.h"
 #include "core/memory/cheat_engine.h"
 #include "frontend_common/config.h"
@@ -63,6 +65,8 @@
 #include "hid_core/hid_core.h"
 #include "hid_core/hid_types.h"
 #include "jni/native.h"
+#include "network/network.h"
+#include "network/room_member.h"
 #include "video_core/renderer_base.h"
 #include "video_core/renderer_vulkan/renderer_vulkan.h"
 #include "video_core/vulkan_common/vulkan_instance.h"
@@ -136,6 +140,16 @@ static EmulationSession s_instance;
 
 EmulationSession::EmulationSession() {
     m_vfs = std::make_shared<FileSys::RealVfsFilesystem>();
+    m_network_initialized = m_system.GetRoomNetwork().Init();
+    if (!m_network_initialized) {
+        LOG_ERROR(Network, "Failed to initialize Android room networking");
+    }
+}
+
+EmulationSession::~EmulationSession() {
+    if (m_network_initialized) {
+        m_system.GetRoomNetwork().Shutdown();
+    }
 }
 
 EmulationSession& EmulationSession::GetInstance() {
@@ -212,6 +226,10 @@ bool EmulationSession::IsRunning() const {
 
 bool EmulationSession::IsPaused() const {
     return m_is_running && m_is_paused;
+}
+
+bool EmulationSession::IsNetworkInitialized() const {
+    return m_network_initialized;
 }
 
 const Core::PerfStatsResults& EmulationSession::PerfStats() {
@@ -711,6 +729,54 @@ jboolean Java_org_citron_citron_1emu_NativeLibrary_isRunning(JNIEnv* env, jclass
 
 jboolean Java_org_citron_citron_1emu_NativeLibrary_isPaused(JNIEnv* env, jclass clazz) {
     return static_cast<jboolean>(EmulationSession::GetInstance().IsPaused());
+}
+
+jboolean Java_org_citron_citron_1emu_NativeLibrary_connectToRoom(JNIEnv* env, jobject jobj,
+                                                               jstring jnickname, jstring jhost,
+                                                               jint jport) {
+    auto& session = EmulationSession::GetInstance();
+    if (!session.IsNetworkInitialized() || jport <= 0 || jport > std::numeric_limits<u16>::max()) {
+        return false;
+    }
+
+    const auto nickname = Common::Android::GetJString(env, jnickname);
+    const auto host = Common::Android::GetJString(env, jhost);
+    if (nickname.empty() || nickname.size() > 20 || host.empty() || host.size() > 253) {
+        return false;
+    }
+
+    if (!Network::GetSelectedNetworkInterface()) {
+        Network::SelectFirstNetworkInterface();
+    }
+    if (!Network::GetSelectedNetworkInterface()) {
+        return false;
+    }
+
+    const auto room_member = session.System().GetRoomNetwork().GetRoomMember().lock();
+    if (!room_member || room_member->GetState() == Network::RoomMember::State::Joining ||
+        room_member->IsConnected()) {
+        return false;
+    }
+
+    room_member->Join(nickname, host.c_str(), static_cast<u16>(jport));
+    return room_member->IsConnected();
+}
+
+jint Java_org_citron_citron_1emu_NativeLibrary_getRoomConnectionState(JNIEnv* env, jobject jobj) {
+    const auto room_member =
+        EmulationSession::GetInstance().System().GetRoomNetwork().GetRoomMember().lock();
+    if (!room_member) {
+        return static_cast<jint>(Network::RoomMember::State::Uninitialized);
+    }
+    return static_cast<jint>(room_member->GetState());
+}
+
+void Java_org_citron_citron_1emu_NativeLibrary_leaveRoom(JNIEnv* env, jobject jobj) {
+    const auto room_member =
+        EmulationSession::GetInstance().System().GetRoomNetwork().GetRoomMember().lock();
+    if (room_member && room_member->IsConnected()) {
+        room_member->Leave();
+    }
 }
 
 void Java_org_citron_citron_1emu_NativeLibrary_initializeSystem(JNIEnv* env, jclass clazz,
