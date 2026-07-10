@@ -65,6 +65,8 @@ option(CITRON_USE_EXTERNAL_VULKAN_HEADERS "Use Vulkan-Headers from externals" ON
 
 option(CITRON_USE_EXTERNAL_VULKAN_UTILITY_LIBRARIES "Use Vulkan-Utility-Libraries from externals" ON)
 
+option(CITRON_USE_LLVM_DEMANGLE "Search for and link against a system LLVM for C++ symbol demangling" OFF)
+
 option(CITRON_USE_QT_MULTIMEDIA "Use QtMultimedia for Camera" OFF)
 
 option(CITRON_USE_QT_WEB_ENGINE "Use QtWebEngine for web applet implementation" OFF)
@@ -352,7 +354,7 @@ endif()
 if (NOT TARGET fmt::fmt)
     find_package(fmt 9 REQUIRED)
 endif()
-if (NOT TARGET LLVM::Demangle)
+if (CITRON_USE_LLVM_DEMANGLE AND NOT TARGET LLVM::Demangle)
     find_package(LLVM 17.0.2 MODULE COMPONENTS Demangle)
 endif()
 if (NOT TARGET lz4::lz4)
