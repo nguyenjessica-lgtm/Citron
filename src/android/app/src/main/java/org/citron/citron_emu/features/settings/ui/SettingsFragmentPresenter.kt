@@ -1020,7 +1020,14 @@ class SettingsFragmentPresenter(
             add(
                 RunnableSetting(
                     titleId = R.string.direct_connect,
-                    descriptionId = R.string.direct_connect_description,
+                    descriptionString = context.getString(
+                        R.string.direct_connect_status,
+                        when (NativeLibrary.getRoomConnectionState()) {
+                            2 -> context.getString(R.string.direct_connect_connecting)
+                            3, 4 -> context.getString(R.string.direct_connect_connected)
+                            else -> context.getString(R.string.direct_connect_disconnected)
+                        }
+                    ),
                     isRunnable = !NativeLibrary.isRunning(),
                     iconId = R.drawable.ic_share
                 ) {

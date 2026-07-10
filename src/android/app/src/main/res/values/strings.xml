@@ -447,6 +447,7 @@
     <string name="airplane_mode_description">Disable all network functionality, similar to Nintendo Switch airplane mode</string>
     <string name="direct_connect">Direct Connect</string>
     <string name="direct_connect_description">Join an existing multiplayer room by address</string>
+    <string name="direct_connect_status">Status: %1$s</string>
     <string name="direct_connect_connect">Connect</string>
     <string name="direct_connect_host">Server address</string>
     <string name="direct_connect_port">Port</string>

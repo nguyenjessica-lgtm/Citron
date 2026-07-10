@@ -6,6 +6,7 @@ import android.app.Dialog
 import android.os.Bundle
 import androidx.core.view.isVisible
 import androidx.fragment.app.DialogFragment
+import androidx.fragment.app.activityViewModels
 import androidx.lifecycle.lifecycleScope
 import androidx.preference.PreferenceManager
 import androidx.appcompat.app.AlertDialog
@@ -25,6 +26,9 @@ import org.citron.citron_emu.databinding.DialogDirectConnectBinding
 class DirectConnectDialogFragment : DialogFragment() {
     private lateinit var binding: DialogDirectConnectBinding
     private var connectionJob: Job? = null
+    private var connectionState = ROOM_IDLE
+
+    private val settingsViewModel: SettingsViewModel by activityViewModels()
 
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
         binding = DialogDirectConnectBinding.inflate(layoutInflater)
@@ -130,6 +134,11 @@ class DirectConnectDialogFragment : DialogFragment() {
     }
 
     private fun renderState(dialog: AlertDialog, state: Int) {
+        if (connectionState != state) {
+            connectionState = state
+            settingsViewModel.setShouldReloadSettingsList(true)
+        }
+
         val connecting = state == ROOM_JOINING
         val connected = state == ROOM_JOINED || state == ROOM_MODERATOR
         binding.directConnectHost.isEnabled = !connecting && !connected
