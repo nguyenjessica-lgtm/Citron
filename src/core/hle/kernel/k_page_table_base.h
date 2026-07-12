@@ -209,6 +209,18 @@ private:
     size_t m_mapped_insecure_memory{};
     size_t m_mapped_ipc_server_memory{};
     size_t m_alias_region_extra_size{};
+    KProcessAddress m_physical_map_window_next_guest{};
+    KPhysicalAddress m_physical_map_window_next_physical{};
+    size_t m_physical_map_window_remaining_pages{};
+    KProcessAddress m_physical_map_previous_guest_end{};
+    u64 m_physical_map_call_count{};
+    u64 m_physical_map_adjacent_count{};
+    u64 m_physical_map_window_hit_count{};
+    u64 m_physical_map_group_node_count{};
+    u64 m_physical_map_single_page_node_count{};
+    size_t m_physical_map_largest_block_pages{};
+    u64 m_physical_map_operate_count{};
+    u64 m_physical_map_estimated_host_map_count{};
     mutable KLightLock m_general_lock;
     mutable KLightLock m_map_physical_memory_lock;
     KLightLock m_device_map_lock;
@@ -381,6 +393,8 @@ protected:
     }
 
 private:
+    void ReleasePhysicalMapWindow();
+
     KProcessAddress FindFreeArea(KProcessAddress region_start, size_t region_num_pages,
                                  size_t num_pages, size_t alignment, size_t offset,
                                  size_t guard_pages) const;

@@ -457,9 +457,22 @@ Result KPageTableBase::InitializeForProcess(Svc::CreateProcessFlag as_type, bool
                                                m_memory_block_slab_manager));
 }
 
+void KPageTableBase::ReleasePhysicalMapWindow() {
+    if (m_physical_map_window_remaining_pages != 0) {
+        m_kernel.MemoryManager().ReleaseContinuous(m_physical_map_window_next_physical,
+                                                   m_physical_map_window_remaining_pages);
+    }
+    m_physical_map_window_next_guest = {};
+    m_physical_map_window_next_physical = {};
+    m_physical_map_window_remaining_pages = 0;
+}
+
 Result KPageTableBase::FinalizeProcess() {
     // Only process tables should be finalized.
     ASSERT(!this->IsKernel());
+
+    KScopedLightLock phys_lk(m_map_physical_memory_lock);
+    this->ReleasePhysicalMapWindow();
 
     // NOTE: Here Nintendo calls an unknown OnFinalize function.
     // this->OnFinalize();
@@ -5142,6 +5155,14 @@ Result KPageTableBase::MapPhysicalMemory(KProcessAddress address, size_t size) {
     // Lock the physical memory lock.
     KScopedLightLock phys_lk(m_map_physical_memory_lock);
 
+    constexpr size_t PhysicalMapWindowPages = (1_MiB / PageSize);
+    const u64 map_call_id = ++m_physical_map_call_count;
+    const bool adjacent_request = map_call_id > 1 && address == m_physical_map_previous_guest_end;
+    const bool window_eligible = m_physical_map_window_remaining_pages != 0 &&
+                                 address == m_physical_map_window_next_guest;
+    m_physical_map_adjacent_count += adjacent_request ? 1 : 0;
+    m_physical_map_previous_guest_end = address + size;
+
     // Calculate the last address for convenience.
     const KProcessAddress last_address = address + size - 1;
 
@@ -5186,12 +5207,24 @@ Result KPageTableBase::MapPhysicalMemory(KProcessAddress address, size_t size) {
                 ++it;
             }
 
-            // If the size mapped is the size requested, we've nothing to do.
-            R_SUCCEED_IF(size == mapped_size);
+            // If the size mapped is the size requested, we've nothing to do. A request that
+            // does not consume the window ends the strict-adjacency opportunity.
+            if (size == mapped_size) {
+                this->ReleasePhysicalMapWindow();
+                R_SUCCEED();
+            }
         }
 
         // Allocate and map the memory.
         {
+            const size_t requested_pages = (size - mapped_size) / PageSize;
+            const bool can_consume_window = mapped_size == 0 && window_eligible &&
+                                            requested_pages <=
+                                                m_physical_map_window_remaining_pages;
+            if (!can_consume_window) {
+                this->ReleasePhysicalMapWindow();
+            }
+
             // Reserve the memory from the process resource limit.
             KScopedResourceReservation memory_reservation(
                 m_resource_limit, Svc::LimitableResource::PhysicalMemoryMax, size - mapped_size);
@@ -5199,9 +5232,43 @@ Result KPageTableBase::MapPhysicalMemory(KProcessAddress address, size_t size) {
 
             // Allocate pages for the new memory.
             KPageGroup pg(m_kernel, m_block_info_manager);
-            R_TRY(m_kernel.MemoryManager().AllocateForProcess(
-                std::addressof(pg), (size - mapped_size) / PageSize, m_allocate_option,
-                GetCurrentProcess(m_kernel).GetId(), m_heap_fill_value));
+            const u64 process_id = GetCurrentProcess(m_kernel).GetId();
+            bool used_window = false;
+
+            if (can_consume_window) {
+                R_TRY(m_kernel.MemoryManager().ConsumeForProcess(
+                    std::addressof(pg), m_physical_map_window_next_physical, requested_pages,
+                    m_allocate_option, process_id, m_heap_fill_value));
+                m_physical_map_window_next_physical += requested_pages * PageSize;
+                m_physical_map_window_remaining_pages -= requested_pages;
+                used_window = true;
+                ++m_physical_map_window_hit_count;
+            } else {
+                const size_t reserve_pages =
+                    mapped_size == 0 ? std::max(requested_pages, PhysicalMapWindowPages)
+                                     : requested_pages;
+                Result continuous_result =
+                    m_kernel.MemoryManager().AllocateForProcessContinuous(
+                        std::addressof(pg), std::addressof(m_physical_map_window_next_physical),
+                        std::addressof(m_physical_map_window_remaining_pages), requested_pages,
+                        reserve_pages, m_allocate_option, process_id, m_heap_fill_value);
+                if (continuous_result.IsError()) {
+                    m_physical_map_window_remaining_pages = 0;
+                    R_TRY(m_kernel.MemoryManager().AllocateForProcess(
+                        std::addressof(pg), requested_pages, m_allocate_option, process_id,
+                        m_heap_fill_value));
+                }
+            }
+            m_physical_map_window_next_guest = address + size;
+
+            size_t allocation_nodes = 0;
+            for (const auto& node : pg) {
+                ++allocation_nodes;
+                m_physical_map_single_page_node_count += node.GetNumPages() == 1 ? 1 : 0;
+                m_physical_map_largest_block_pages =
+                    std::max(m_physical_map_largest_block_pages, node.GetNumPages());
+            }
+            m_physical_map_group_node_count += allocation_nodes;
 
             // If we fail in the next bit (or retry), we need to cleanup the pages.
             auto pg_guard = SCOPE_GUARD {
@@ -5262,6 +5329,7 @@ Result KPageTableBase::MapPhysicalMemory(KProcessAddress address, size_t size) {
                     // If the size now isn't what it was before, somebody mapped or unmapped
                     // concurrently. If this happened, retry.
                     if (mapped_size != checked_mapped_size) {
+                        this->ReleasePhysicalMapWindow();
                         continue;
                     }
                 }
@@ -5395,6 +5463,12 @@ Result KPageTableBase::MapPhysicalMemory(KProcessAddress address, size_t size) {
                             }
 
                             // Map the papges.
+                            size_t final_nodes = 0;
+                            for ([[maybe_unused]] const auto& node : cur_pg) {
+                                ++final_nodes;
+                            }
+                            ++m_physical_map_operate_count;
+                            m_physical_map_estimated_host_map_count += final_nodes;
                             R_TRY(this->Operate(updater.GetPageList(), cur_address, map_pages,
                                                 cur_pg, map_properties,
                                                 OperationType::MapFirstGroupPhysical, false));
@@ -5426,6 +5500,20 @@ Result KPageTableBase::MapPhysicalMemory(KProcessAddress address, size_t size) {
                         ? KMemoryBlockDisableMergeAttribute::Normal
                         : KMemoryBlockDisableMergeAttribute::None,
                     KMemoryBlockDisableMergeAttribute::None);
+
+                if (map_call_id % 1024 == 0) {
+                    LOG_INFO(HW_Memory,
+                             "MapPhysicalMemory summary: calls={} adjacent={} window_hits={} "
+                             "pg_nodes={} single_page_nodes={} largest_block_pages={} "
+                             "operate_calls={} estimated_host_map_calls={} "
+                             "sample_window_hit={} window_pages={}",
+                             map_call_id, m_physical_map_adjacent_count,
+                             m_physical_map_window_hit_count, m_physical_map_group_node_count,
+                             m_physical_map_single_page_node_count,
+                             m_physical_map_largest_block_pages, m_physical_map_operate_count,
+                             m_physical_map_estimated_host_map_count, used_window,
+                             m_physical_map_window_remaining_pages);
+                }
 
                 R_SUCCEED();
             }
