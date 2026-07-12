@@ -216,11 +216,18 @@ private:
     u64 m_physical_map_call_count{};
     u64 m_physical_map_adjacent_count{};
     u64 m_physical_map_window_hit_count{};
+    u64 m_physical_map_continuous_success_count{};
+    u64 m_physical_map_continuous_failure_count{};
+    u64 m_physical_map_fallback_count{};
     u64 m_physical_map_group_node_count{};
     u64 m_physical_map_single_page_node_count{};
     size_t m_physical_map_largest_block_pages{};
     u64 m_physical_map_operate_count{};
     u64 m_physical_map_estimated_host_map_count{};
+    size_t m_physical_map_max_guest_free_extents{};
+    size_t m_physical_map_max_group_nodes{};
+    size_t m_physical_map_max_operate_calls{};
+    size_t m_physical_map_max_estimated_host_maps{};
     mutable KLightLock m_general_lock;
     mutable KLightLock m_map_physical_memory_lock;
     KLightLock m_device_map_lock;

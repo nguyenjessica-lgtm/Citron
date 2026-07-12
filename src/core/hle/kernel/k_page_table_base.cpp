@@ -5172,6 +5172,8 @@ Result KPageTableBase::MapPhysicalMemory(KProcessAddress address, size_t size) {
 
     // The entire mapping process can be retried.
     while (true) {
+        size_t guest_free_extents = 0;
+
         // Check if the memory is already mapped.
         {
             // Lock the table.
@@ -5188,17 +5190,19 @@ Result KPageTableBase::MapPhysicalMemory(KProcessAddress address, size_t size) {
 
                 // Get the memory info.
                 const KMemoryInfo info = it->GetMemoryInfo();
+                const bool is_free = info.GetState() == KMemoryState::Free;
+                guest_free_extents += is_free ? 1 : 0;
 
                 // Check if we're done.
                 if (last_address <= info.GetLastAddress()) {
-                    if (info.GetState() != KMemoryState::Free) {
+                    if (!is_free) {
                         mapped_size += (last_address + 1 - cur_address);
                     }
                     break;
                 }
 
                 // Track the memory if it's mapped.
-                if (info.GetState() != KMemoryState::Free) {
+                if (!is_free) {
                     mapped_size += KProcessAddress(info.GetEndAddress()) - cur_address;
                 }
 
@@ -5234,6 +5238,9 @@ Result KPageTableBase::MapPhysicalMemory(KProcessAddress address, size_t size) {
             KPageGroup pg(m_kernel, m_block_info_manager);
             const u64 process_id = GetCurrentProcess(m_kernel).GetId();
             bool used_window = false;
+            bool continuous_succeeded = false;
+            bool continuous_failed = false;
+            bool used_fallback = false;
 
             if (can_consume_window) {
                 R_TRY(m_kernel.MemoryManager().ConsumeForProcess(
@@ -5253,10 +5260,17 @@ Result KPageTableBase::MapPhysicalMemory(KProcessAddress address, size_t size) {
                         std::addressof(m_physical_map_window_remaining_pages), requested_pages,
                         reserve_pages, m_allocate_option, process_id, m_heap_fill_value);
                 if (continuous_result.IsError()) {
+                    continuous_failed = true;
+                    used_fallback = true;
+                    ++m_physical_map_continuous_failure_count;
+                    ++m_physical_map_fallback_count;
                     m_physical_map_window_remaining_pages = 0;
                     R_TRY(m_kernel.MemoryManager().AllocateForProcess(
                         std::addressof(pg), requested_pages, m_allocate_option, process_id,
                         m_heap_fill_value));
+                } else {
+                    continuous_succeeded = true;
+                    ++m_physical_map_continuous_success_count;
                 }
             }
             m_physical_map_window_next_guest = address + size;
@@ -5269,6 +5283,23 @@ Result KPageTableBase::MapPhysicalMemory(KProcessAddress address, size_t size) {
                     std::max(m_physical_map_largest_block_pages, node.GetNumPages());
             }
             m_physical_map_group_node_count += allocation_nodes;
+            m_physical_map_max_guest_free_extents =
+                std::max(m_physical_map_max_guest_free_extents, guest_free_extents);
+            m_physical_map_max_group_nodes =
+                std::max(m_physical_map_max_group_nodes, allocation_nodes);
+
+            if (used_fallback && (m_physical_map_fallback_count == 1 ||
+                                  m_physical_map_fallback_count % 16 == 0)) {
+                LOG_WARNING(HW_Memory,
+                            "MapPhysicalMemory continuous fallback: call={} address={:#x} "
+                            "size={:#x} mapped_size={:#x} requested_pages={} "
+                            "guest_free_extents={} fallback_pg_nodes={} fallback_count={}",
+                            map_call_id, GetInteger(address), size, mapped_size, requested_pages,
+                            guest_free_extents, allocation_nodes, m_physical_map_fallback_count);
+            }
+
+            size_t call_operate_count = 0;
+            size_t call_estimated_host_map_count = 0;
 
             // If we fail in the next bit (or retry), we need to cleanup the pages.
             auto pg_guard = SCOPE_GUARD {
@@ -5469,6 +5500,8 @@ Result KPageTableBase::MapPhysicalMemory(KProcessAddress address, size_t size) {
                             }
                             ++m_physical_map_operate_count;
                             m_physical_map_estimated_host_map_count += final_nodes;
+                            ++call_operate_count;
+                            call_estimated_host_map_count += final_nodes;
                             R_TRY(this->Operate(updater.GetPageList(), cur_address, map_pages,
                                                 cur_pg, map_properties,
                                                 OperationType::MapFirstGroupPhysical, false));
@@ -5501,18 +5534,41 @@ Result KPageTableBase::MapPhysicalMemory(KProcessAddress address, size_t size) {
                         : KMemoryBlockDisableMergeAttribute::None,
                     KMemoryBlockDisableMergeAttribute::None);
 
-                if (map_call_id % 1024 == 0) {
+                m_physical_map_max_operate_calls =
+                    std::max(m_physical_map_max_operate_calls, call_operate_count);
+                m_physical_map_max_estimated_host_maps = std::max(
+                    m_physical_map_max_estimated_host_maps, call_estimated_host_map_count);
+
+                if (map_call_id % 64 == 0) {
                     LOG_INFO(HW_Memory,
-                             "MapPhysicalMemory summary: calls={} adjacent={} window_hits={} "
+                             "MapPhysicalMemory sample: call={} address={:#x} size={:#x} "
+                             "mapped_size={:#x} requested_pages={} guest_free_extents={} "
+                             "pg_nodes={} operate_calls={} estimated_host_map_calls={} "
+                             "window_hit={} continuous_success={} continuous_failure={} "
+                             "fallback={} window_pages={}",
+                             map_call_id, GetInteger(address), size, mapped_size, requested_pages,
+                             guest_free_extents, allocation_nodes, call_operate_count,
+                             call_estimated_host_map_count, used_window, continuous_succeeded,
+                             continuous_failed, used_fallback,
+                             m_physical_map_window_remaining_pages);
+                    LOG_INFO(HW_Memory,
+                             "MapPhysicalMemory totals: calls={} adjacent={} window_hits={} "
+                             "continuous_success={} continuous_failure={} fallback={} "
                              "pg_nodes={} single_page_nodes={} largest_block_pages={} "
                              "operate_calls={} estimated_host_map_calls={} "
-                             "sample_window_hit={} window_pages={}",
+                             "max_guest_free_extents={} max_pg_nodes={} max_operate_calls={} "
+                             "max_estimated_host_map_calls={}",
                              map_call_id, m_physical_map_adjacent_count,
-                             m_physical_map_window_hit_count, m_physical_map_group_node_count,
+                             m_physical_map_window_hit_count,
+                             m_physical_map_continuous_success_count,
+                             m_physical_map_continuous_failure_count,
+                             m_physical_map_fallback_count, m_physical_map_group_node_count,
                              m_physical_map_single_page_node_count,
                              m_physical_map_largest_block_pages, m_physical_map_operate_count,
-                             m_physical_map_estimated_host_map_count, used_window,
-                             m_physical_map_window_remaining_pages);
+                             m_physical_map_estimated_host_map_count,
+                             m_physical_map_max_guest_free_extents,
+                             m_physical_map_max_group_nodes, m_physical_map_max_operate_calls,
+                             m_physical_map_max_estimated_host_maps);
                 }
 
                 R_SUCCEED();
