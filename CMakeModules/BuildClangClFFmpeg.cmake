@@ -61,6 +61,27 @@ function(citron_build_clangcl_ffmpeg)
     list(GET _clangcl_ffmpeg_paths 6 _install_dir_msys)
     set(_build_stamp "${_install_dir}/.built")
     file(MAKE_DIRECTORY "${_build_dir}" "${_install_dir}")
+
+    set(_ffmpeg_extra_cflags "/MD")
+    if (DEFINED CLANGCL_FFMPEG_EXTRA_CFLAGS AND NOT "${CLANGCL_FFMPEG_EXTRA_CFLAGS}" STREQUAL "")
+        # dash-prefixed clang flags from build-clangtron-windows.sh (pgo_flags_dash)
+        set(_ffmpeg_extra_cflags "${_ffmpeg_extra_cflags} ${CLANGCL_FFMPEG_EXTRA_CFLAGS}")
+    endif()
+
+    # Flag sentinel: if cached build's flags differ from current, remove stamp so ninja rebuilds.
+    # CLANGCL_FFMPEG_CACHE_DIR path-keying is the primary protection; this is a fallback.
+    set(_ffmpeg_flags_sentinel "${_install_dir}/.citron-clangcl-extra-cflags")
+    set(_ffmpeg_flags_sentinel_content "")
+    if (EXISTS "${_ffmpeg_flags_sentinel}")
+        file(READ "${_ffmpeg_flags_sentinel}" _ffmpeg_flags_sentinel_content)
+        string(STRIP "${_ffmpeg_flags_sentinel_content}" _ffmpeg_flags_sentinel_content)
+    endif()
+    if (EXISTS "${_build_stamp}" AND NOT _ffmpeg_flags_sentinel_content STREQUAL "${_ffmpeg_extra_cflags}")
+        message(STATUS "[FFmpeg/clang-cl] Cached build's recorded flags don't match the current build's; rebuilding")
+        file(REMOVE "${_build_stamp}")
+    endif()
+    file(WRITE "${_ffmpeg_flags_sentinel}" "${_ffmpeg_extra_cflags}")
+
     set(_ffmpeg_configure_command
         "export PATH='${_clangcl_tool_dir_msys}:${_linker_tool_dir_msys}:${_ar_tool_dir_msys}':$PATH &&"
         "'${_source_dir_win}/configure'"
@@ -98,7 +119,7 @@ function(citron_build_clangcl_ffmpeg)
         "--enable-filter=yadif,scale"
         "--enable-dxva2"
         "--enable-d3d11va"
-        "--extra-cflags=/MD")
+        "--extra-cflags='${_ffmpeg_extra_cflags}'")
     string(JOIN " " _ffmpeg_configure_command ${_ffmpeg_configure_command})
 
     add_custom_command(

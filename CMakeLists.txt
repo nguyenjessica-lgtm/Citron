@@ -923,6 +923,53 @@ if(CITRON_CLANGCL)
     if(TARGET citron-room)
         list(APPEND _citron_runtime_deps citron-room)
     endif()
+
+    # PGO flags applied per-target to first-party targets only — never via global
+    # CMAKE_C/CXX_FLAGS, which SDL2 and other CPM sub-targets inherit. A PGO-instrumented
+    # citron.exe linked against plain SDL2 under the same LTO link fails with:
+    # "linking module flags 'ProfileSummary': IDs have conflicting values".
+    # CITRON_CLANGCL_PGO_COMPILE_FLAGS/_LINK_FLAGS are empty by default;
+    # only set by build-clangtron-windows.sh's clang-cl stage.
+    #
+    # The target list must include the core libraries (core, video_core, etc.)
+    # not just the executables — citron.exe itself is mostly Qt UI glue;
+    # the emulator logic lives in the static libraries it links.
+    set(_citron_pgo_targets ${_citron_runtime_deps})
+    foreach(_citron_pgo_lib IN ITEMS
+            common core video_core audio_core shader_recompiler
+            input_common frontend_common hid_core network web_service
+            dynarmic)
+        if(TARGET ${_citron_pgo_lib})
+            list(APPEND _citron_pgo_targets ${_citron_pgo_lib})
+        endif()
+    endforeach()
+    unset(_citron_pgo_lib)
+
+    set(CITRON_CLANGCL_PGO_COMPILE_FLAGS "" CACHE STRING
+        "clang-cl PGO/LTO compiler flags, applied only to citron's own first-party targets")
+    set(CITRON_CLANGCL_PGO_LINK_FLAGS "" CACHE STRING
+        "clang-cl PGO/LTO linker flags, applied only to citron's own first-party targets")
+    # CITRON_CLANGCL_PGO_LINK_FLAGS must be native lld-link syntax only (e.g. /INCLUDE:).
+    # CMake's Ninja Multi-Config generator invokes lld-link.exe directly for the final link
+    # (not via clang-cl), so /clang:-prefixed tokens would be treated as input file paths.
+    if(CITRON_CLANGCL_PGO_COMPILE_FLAGS OR CITRON_CLANGCL_PGO_LINK_FLAGS)
+        separate_arguments(_citron_pgo_compile_flags UNIX_COMMAND "${CITRON_CLANGCL_PGO_COMPILE_FLAGS}")
+        separate_arguments(_citron_pgo_link_flags UNIX_COMMAND "${CITRON_CLANGCL_PGO_LINK_FLAGS}")
+        foreach(_citron_pgo_target IN LISTS _citron_pgo_targets)
+            if(_citron_pgo_compile_flags)
+                target_compile_options(${_citron_pgo_target} PRIVATE ${_citron_pgo_compile_flags})
+            endif()
+            # Link flags only apply to executables, not static libraries.
+            if(_citron_pgo_link_flags AND "${_citron_pgo_target}" IN_LIST _citron_runtime_deps)
+                target_link_options(${_citron_pgo_target} PRIVATE ${_citron_pgo_link_flags})
+            endif()
+        endforeach()
+        unset(_citron_pgo_compile_flags)
+        unset(_citron_pgo_link_flags)
+        unset(_citron_pgo_target)
+    endif()
+    unset(_citron_pgo_targets)
+
     add_custom_target(citron-runtime
         DEPENDS ${_citron_runtime_deps})
     unset(_citron_runtime_deps)

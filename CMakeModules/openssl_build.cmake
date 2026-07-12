@@ -77,6 +77,8 @@ set(_OPENSSL_PARALLEL_ARGS "-j${_NPROC}")
 set(_OPENSSL_SSL_NAME "libssl.a")
 set(_OPENSSL_CRYPTO_NAME "libcrypto.a")
 
+set(_OPENSSL_EXTRA_CFLAGS "")
+
 if (WIN32 AND MSVC AND CMAKE_C_COMPILER_ID MATCHES "Clang")
     set(_OPENSSL_TARGET "VC-WIN64A")
     set(_OPENSSL_CC "clang-cl")
@@ -91,6 +93,11 @@ if (WIN32 AND MSVC AND CMAKE_C_COMPILER_ID MATCHES "Clang")
     endif()
     set(_OPENSSL_SSL_NAME "libssl.lib")
     set(_OPENSSL_CRYPTO_NAME "libcrypto.lib")
+    # LTO/PGO flags from build-clangtron-windows.sh's clang-cl stage (pgo_flags_dash).
+    # Only read inside VC-WIN64A — llvm-mingw and Linux paths never reach this branch.
+    if (DEFINED CLANGCL_OPENSSL_EXTRA_CFLAGS AND NOT "${CLANGCL_OPENSSL_EXTRA_CFLAGS}" STREQUAL "")
+        set(_OPENSSL_EXTRA_CFLAGS "${CLANGCL_OPENSSL_EXTRA_CFLAGS}")
+    endif()
 elseif (CMAKE_CROSSCOMPILING AND CMAKE_C_COMPILER MATCHES "x86_64-w64-mingw32")
     # Case 2: Linux → Windows cross-compile with llvm-mingw.
     set(_OPENSSL_TARGET "mingw64")
@@ -197,6 +204,22 @@ if (_OPENSSL_LIBDIR AND _OPENSSL_IS_MINGW_CROSS)
 
     if (NOT _openssl_cache_valid)
         message(STATUS "[OpenSSL] Cached Windows cross build is stale; rebuilding with ${_OPENSSL_CROSS} tools")
+        file(REMOVE_RECURSE "${_OPENSSL_BUILD_DIR}" "${_OPENSSL_INSTALL}")
+        set(_OPENSSL_LIBDIR "")
+    endif()
+endif()
+
+# Flag sentinel for VC-WIN64A: if cached flags don't match current, force rebuild.
+# The CLANGCL_OPENSSL_CACHE_DIR path key is the primary protection; this is a fallback.
+if (_OPENSSL_LIBDIR AND _OPENSSL_TARGET STREQUAL "VC-WIN64A")
+    set(_openssl_flags_sentinel "${_OPENSSL_INSTALL}/.citron-clangcl-extra-cflags")
+    set(_openssl_flags_sentinel_content "")
+    if (EXISTS "${_openssl_flags_sentinel}")
+        file(READ "${_openssl_flags_sentinel}" _openssl_flags_sentinel_content)
+        string(STRIP "${_openssl_flags_sentinel_content}" _openssl_flags_sentinel_content)
+    endif()
+    if (NOT _openssl_flags_sentinel_content STREQUAL "${_OPENSSL_EXTRA_CFLAGS}")
+        message(STATUS "[OpenSSL] Cached build's recorded flags don't match the current build's; rebuilding")
         file(REMOVE_RECURSE "${_OPENSSL_BUILD_DIR}" "${_OPENSSL_INSTALL}")
         set(_OPENSSL_LIBDIR "")
     endif()
@@ -314,6 +337,12 @@ if (_OPENSSL_TARGET STREQUAL "VC-WIN64A")
     # don't get linked against a mismatched runtime (which otherwise shows up
     # as CRT-mismatch link errors, e.g. LNK2038/LNK4098-style conflicts).
     list(APPEND _OPENSSL_CONFIGURE_ARGS "-MD")
+    if (_OPENSSL_EXTRA_CFLAGS)
+        # Configure uses [-Dxxx] [-fxxx] bare token syntax — pass dash-prefixed flags,
+        # not /clang:-prefixed (which is clang-cl driver syntax, not plain token-splitting).
+        separate_arguments(_openssl_extra_cflags_list UNIX_COMMAND "${_OPENSSL_EXTRA_CFLAGS}")
+        list(APPEND _OPENSSL_CONFIGURE_ARGS ${_openssl_extra_cflags_list})
+    endif()
 endif()
 list(APPEND _OPENSSL_CONFIGURE_ARGS "CC=${_OPENSSL_CC}" "AR=${_OPENSSL_AR}")
 if (_OPENSSL_RANLIB)
@@ -384,5 +413,10 @@ if (NOT _ssl_install_result EQUAL 0)
 endif()
 
 message(STATUS "[OpenSSL] Successfully built static OpenSSL ${_OPENSSL_VERSION}")
+
+# Write flag sentinel for future cache reuse validation.
+if (_OPENSSL_TARGET STREQUAL "VC-WIN64A")
+    file(WRITE "${_OPENSSL_INSTALL}/.citron-clangcl-extra-cflags" "${_OPENSSL_EXTRA_CFLAGS}")
+endif()
 
 _citron_publish_openssl_imports()
