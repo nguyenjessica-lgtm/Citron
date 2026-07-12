@@ -171,16 +171,6 @@ public:
     }
 
     ~Impl() {
-        if (max_map_count != 0) {
-            const u64 current = CountProcessVmas();
-            const u64 peak = std::max(current, peak_vma_count.load(std::memory_order_relaxed));
-            LOG_INFO(HW_Memory,
-                     "Host VMA summary: current={}, sampled_peak={}, budget={}, max_map_count={}, "
-                     "map_count={}, unmap_count={}",
-                     current, peak, vma_budget, max_map_count,
-                     map_count.load(std::memory_order_relaxed),
-                     unmap_count.load(std::memory_order_relaxed));
-        }
         Release();
     }
 
@@ -526,6 +516,16 @@ public:
     }
 
     ~Impl() {
+        if (max_map_count != 0) {
+            const u64 current = CountProcessVmas();
+            const u64 peak = std::max(current, peak_vma_count.load(std::memory_order_relaxed));
+            LOG_INFO(HW_Memory,
+                     "Host VMA summary: current={}, sampled_peak={}, budget={}, max_map_count={}, "
+                     "map_count={}, unmap_count={}",
+                     current, peak, vma_budget, max_map_count,
+                     map_count.load(std::memory_order_relaxed),
+                     unmap_count.load(std::memory_order_relaxed));
+        }
         Release();
     }
 

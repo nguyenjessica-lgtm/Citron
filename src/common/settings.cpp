@@ -11,9 +11,6 @@
 #endif
 #include <compare>
 #include <cstddef>
-#if defined(__ANDROID__)
-#include <cstdio>
-#endif
 #include <filesystem>
 #include <functional>
 #include <string_view>
@@ -172,12 +169,7 @@ bool IsGPULevelNormal() {
            values.current_gpu_accuracy == GpuAccuracy::Normal;
 }
 
-static bool is_fastmem_enabled_for_process = true;
-
 bool IsFastmemEnabled() {
-    if (!is_fastmem_enabled_for_process) {
-        return false;
-    }
     if (values.cpu_debug_mode)
         return bool(values.cpuopt_fastmem);
     return true;
@@ -190,23 +182,6 @@ bool IsCpuUltraLowAccuracy() {
 static bool is_nce_enabled = false;
 
 void SetNceEnabled(bool is_39bit) {
-    is_fastmem_enabled_for_process = true;
-#if defined(__ANDROID__)
-    constexpr unsigned long SafeVmaLimit = 131072;
-    if (std::FILE* file = std::fopen("/proc/sys/vm/max_map_count", "r")) {
-        unsigned long max_map_count = 0;
-        const bool read_limit = std::fscanf(file, "%lu", &max_map_count) == 1;
-        std::fclose(file);
-        if (read_limit && max_map_count < SafeVmaLimit) {
-            is_fastmem_enabled_for_process = false;
-            LOG_WARNING(Common,
-                        "Android vm.max_map_count={} is below the safe fastmem threshold {}; "
-                        "disabling fastmem and NCE for this process to avoid VMA exhaustion",
-                        max_map_count, SafeVmaLimit);
-        }
-    }
-#endif
-
     const bool is_nce_selected = values.cpu_backend.GetValue() == CpuBackend::Nce;
     if (is_nce_selected && !IsFastmemEnabled()) {
         LOG_WARNING(Common, "Fastmem is required to natively execute code in a performant manner, "
