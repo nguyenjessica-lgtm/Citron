@@ -91,7 +91,8 @@ void ThreadManager::TickGPU() {
 }
 
 void ThreadManager::Synchronize() {
-    if (!is_async) {
+    if (!is_async || !thread.joinable() || thread.get_stop_token().stop_requested() ||
+        thread.get_id() == std::this_thread::get_id()) {
         return;
     }
     PushCommand(SynchronizeCommand(), true);

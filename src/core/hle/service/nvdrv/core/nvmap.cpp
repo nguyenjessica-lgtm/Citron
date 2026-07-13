@@ -87,15 +87,19 @@ void NvMap::UnmapHandle(Handle& handle_description) {
         handle_description.unmap_queue_entry.reset();
     }
 
-    // Async GPU commands may still reference this handle's GMMU/SMMU mappings. Drain commands
-    // submitted before the unmap so the device mapping cannot disappear while they are executing.
-    auto& system = host1x.System();
-    if (system.IsPoweredOn() && system.GPU().IsAsync()) {
-        system.GPU().SynchronizeGPUThread();
+    const bool has_gmmu_mapping = handle_description.pin_virt_address >= 0x1000;
+    const bool has_smmu_mapping = handle_description.d_address >= 0x1000;
+    if (has_gmmu_mapping || has_smmu_mapping) {
+        // Async GPU commands may still reference either mapping. Drain commands submitted before
+        // the unmap so the device mapping cannot disappear while they are executing.
+        auto& system = host1x.System();
+        if (system.IsPoweredOn() && system.GPU().IsAsync()) {
+            system.GPU().SynchronizeGPUThread();
+        }
     }
 
     // Free and unmap the handle from Host1x GMMU
-    if (handle_description.pin_virt_address && handle_description.pin_virt_address >= 4096) {
+    if (has_gmmu_mapping) {
         host1x.GMMU().Unmap(static_cast<GPUVAddr>(handle_description.pin_virt_address),
                             handle_description.aligned_size);
         host1x.Allocator().Free(handle_description.pin_virt_address,
