@@ -226,6 +226,7 @@ private:
     std::array<PhysicalMapWindowSlot, PhysicalMapWindowSlots> m_physical_map_windows{};
     KProcessAddress m_physical_map_previous_guest_end{};
     u64 m_physical_map_window_sequence{};
+    u64 m_physical_map_continuous_retry_after_call{};
     u64 m_physical_map_call_count{};
     u64 m_physical_map_adjacent_count{};
     u64 m_physical_map_window_hit_count{};
