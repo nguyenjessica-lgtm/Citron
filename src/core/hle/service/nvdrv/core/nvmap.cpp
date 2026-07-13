@@ -9,10 +9,12 @@
 #include "common/assert.h"
 #include "common/common_types.h"
 #include "common/logging.h"
+#include "core/core.h"
 #include "core/hle/service/nvdrv/core/container.h"
 #include "core/hle/service/nvdrv/core/heap_mapper.h"
 #include "core/hle/service/nvdrv/core/nvmap.h"
 #include "core/memory.h"
+#include "video_core/gpu.h"
 #include "video_core/host1x/host1x.h"
 
 namespace Service::Nvidia::NvCore {
@@ -83,6 +85,13 @@ void NvMap::UnmapHandle(Handle& handle_description) {
     if (handle_description.unmap_queue_entry) {
         unmap_queue.erase(*handle_description.unmap_queue_entry);
         handle_description.unmap_queue_entry.reset();
+    }
+
+    // Async GPU commands may still reference this handle's GMMU/SMMU mappings. Drain commands
+    // submitted before the unmap so the device mapping cannot disappear while they are executing.
+    auto& system = host1x.System();
+    if (system.IsPoweredOn() && system.GPU().IsAsync()) {
+        system.GPU().SynchronizeGPUThread();
     }
 
     // Free and unmap the handle from Host1x GMMU
