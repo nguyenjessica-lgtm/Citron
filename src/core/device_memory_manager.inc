@@ -471,10 +471,15 @@ template <typename Traits>
 void DeviceMemoryManager<Traits>::ReadBlockUnsafe(DAddr address, void* dest_pointer, size_t size,
                                                   std::string_view call_site) {
     static std::atomic<u64> unmapped_read_unsafe_count{0};
+    static std::atomic<u64> target_read_count{0};
     if (Common::NvdecLifetimeTrace::Overlaps(address, size)) {
-        LOG_WARNING(HW_Memory,
-                    "NVDEC-LIFETIME Device read call_site={} d_address=0x{:016X} size={}",
-                    call_site, address, size);
+        const u64 count = target_read_count.fetch_add(1, std::memory_order_relaxed) + 1;
+        if (count <= 8 || (count % 256) == 0) {
+            LOG_WARNING(HW_Memory,
+                        "NVDEC-LIFETIME Device read call_site={} d_address=0x{:016X} size={} "
+                        "sample_count={}",
+                        call_site, address, size, count);
+        }
     }
     WalkBlock(
         address, size,
