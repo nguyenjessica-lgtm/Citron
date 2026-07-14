@@ -253,13 +253,6 @@ DAddr NvMap::PinHandle(NvMap::Handle::Id handle, bool low_area_pin) {
         const size_t map_size = handle_description->aligned_size;
         if (session->has_preallocated_area && session->mapper->IsInBounds(vaddress, map_size)) {
             handle_description->d_address = session->mapper->Map(vaddress, map_size);
-            if (handle_description->d_address == 0) {
-                LOG_ERROR(Service_NVDRV,
-                          "Failed to pin partially backed heap nvmap handle={} "
-                          "v_address=0x{:016X} size={}",
-                          handle_description->id, vaddress, map_size);
-                return 0;
-            }
             handle_description->in_heap = true;
         } else {
             size_t aligned_up = Common::AlignUp(map_size, BIG_PAGE_SIZE);
@@ -295,15 +288,7 @@ DAddr NvMap::PinHandle(NvMap::Handle::Id handle, bool low_area_pin) {
             }
 
             handle_description->d_address = address;
-            if (!smmu.Map(address, vaddress, map_size, session->asid, true)) {
-                smmu.Free(address, aligned_up);
-                handle_description->d_address = 0;
-                LOG_ERROR(Service_NVDRV,
-                          "Failed to pin partially backed nvmap handle={} "
-                          "v_address=0x{:016X} size={}",
-                          handle_description->id, vaddress, map_size);
-                return 0;
-            }
+            smmu.Map(address, vaddress, map_size, session->asid, true);
             handle_description->in_heap = false;
         }
     }

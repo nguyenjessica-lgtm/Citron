@@ -2,8 +2,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include <mutex>
-#include <utility>
-#include <vector>
 
 #include "common/logging.h"
 #include "common/nvdec_lifetime_trace.h"
@@ -54,15 +52,8 @@ DAddr HeapMapper::Map(VAddr start, size_t size) {
             m_internal->m_temporary_set.Subtract(start_addr, end_addr - start_addr);
         });
 
-    // Map anything that has not been mapped yet. Keep track of new mappings so a failed subrange
-    // cannot leave an untracked partial heap mapping behind.
-    bool mapping_succeeded = true;
-    std::vector<std::pair<DAddr, size_t>> new_mappings;
-    m_internal->m_temporary_set.ForEach([this, &mapping_succeeded,
-                                         &new_mappings](VAddr start_addr, VAddr end_addr) {
-        if (!mapping_succeeded) {
-            return;
-        }
+    // Map anything that has not been mapped yet.
+    m_internal->m_temporary_set.ForEach([this](VAddr start_addr, VAddr end_addr) {
         const size_t sub_size = end_addr - start_addr;
         const size_t offset = start_addr - m_vaddress;
         const DAddr target_addr = m_daddress + offset;
@@ -72,23 +63,8 @@ DAddr HeapMapper::Map(VAddr start, size_t size) {
                         "d_address=0x{:016X} size={} heap_vbase=0x{:016X} heap_dbase=0x{:016X}",
                         start_addr, target_addr, sub_size, m_vaddress, m_daddress);
         }
-        mapping_succeeded = m_internal->m_device_memory.Map(
-            target_addr, m_vaddress + offset, sub_size, m_asid);
-        if (mapping_succeeded) {
-            new_mappings.emplace_back(target_addr, sub_size);
-        }
+        m_internal->m_device_memory.Map(m_daddress + offset, m_vaddress + offset, sub_size, m_asid);
     });
-
-    if (!mapping_succeeded) {
-        for (const auto& [target_addr, sub_size] : new_mappings) {
-            m_internal->m_device_memory.Unmap(target_addr, sub_size);
-        }
-        m_internal->m_temporary_set.Clear();
-        LOG_ERROR(Service_NVDRV,
-                  "HeapMapper rejected partially backed range: v_address=0x{:016X} size={}",
-                  start, size);
-        return 0;
-    }
 
     // Add the mapping range to the split map, to register the map and overlaps.
     m_internal->m_mapped_ranges.Add(start, size);

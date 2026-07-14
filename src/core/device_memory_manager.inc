@@ -5,7 +5,6 @@
 #include <limits>
 #include <memory>
 #include <type_traits>
-#include <vector>
 
 #include "common/address_space.h"
 #include "common/address_space.inc"
@@ -211,46 +210,33 @@ void DeviceMemoryManager<Traits>::Free(DAddr start, size_t size) {
 }
 
 template <typename Traits>
-bool DeviceMemoryManager<Traits>::Map(DAddr address, VAddr virtual_address, size_t size, Asid asid,
+void DeviceMemoryManager<Traits>::Map(DAddr address, VAddr virtual_address, size_t size, Asid asid,
                                       bool track) {
-    Core::Memory::Memory* process_memory = registered_processes[asid.id];
-    size_t start_page_d = address >> Memory::CITRON_PAGEBITS;
-    size_t num_pages = Common::AlignUp(size, Memory::CITRON_PAGESIZE) >> Memory::CITRON_PAGEBITS;
-    std::scoped_lock lk(mapping_guard);
-
-    // Preflight the whole range before changing any device mappings. Nvmap handles describe
-    // contiguous memory, so silently leaving holes creates a mapping that no longer matches the
-    // handle size advertised to GMMU users.
-    std::vector<u32> physical_pages(num_pages);
-    for (size_t i = 0; i < num_pages; i++) {
-        const VAddr new_vaddress = virtual_address + i * Memory::CITRON_PAGESIZE;
-        auto* ptr = process_memory->GetPointerSilent(Common::ProcessAddress(new_vaddress));
-        if (ptr == nullptr) [[unlikely]] {
-            static std::atomic<u64> rejected_map_count{0};
-            const u64 count = rejected_map_count.fetch_add(1, std::memory_order_relaxed) + 1;
-            if (count <= 8 || (count % 256) == 0) {
-                LOG_ERROR(HW_Memory,
-                          "Rejected partial device map: d_address=0x{:016X} "
-                          "v_address=0x{:016X} size={} first_missing_d=0x{:016X} "
-                          "first_missing_v=0x{:016X} page_index={} asid={} sample_count={}",
-                          address, virtual_address, size,
-                          address + i * Memory::CITRON_PAGESIZE, new_vaddress, i, asid.id, count);
-            }
-            return false;
-        }
-        physical_pages[i] =
-            static_cast<u32>(GetRawPhysicalAddr(ptr) >> Memory::CITRON_PAGEBITS) + 1U;
-    }
-
     if (Common::NvdecLifetimeTrace::Overlaps(address, size)) {
         LOG_WARNING(HW_Memory,
                     "NVDEC-LIFETIME SMMU map d_address=0x{:016X} v_address=0x{:016X} "
                     "size={} asid={} track={}",
                     address, virtual_address, size, asid.id, track);
     }
+    Core::Memory::Memory* process_memory = registered_processes[asid.id];
+    size_t start_page_d = address >> Memory::CITRON_PAGEBITS;
+    size_t num_pages = Common::AlignUp(size, Memory::CITRON_PAGESIZE) >> Memory::CITRON_PAGEBITS;
+    std::scoped_lock lk(mapping_guard);
+    size_t missing_pages = 0;
+    size_t first_missing_page = 0;
     for (size_t i = 0; i < num_pages; i++) {
         const VAddr new_vaddress = virtual_address + i * Memory::CITRON_PAGESIZE;
-        const u32 phys_addr = physical_pages[i];
+        auto* ptr = process_memory->GetPointerSilent(Common::ProcessAddress(new_vaddress));
+        if (ptr == nullptr) [[unlikely]] {
+            entries[start_page_d + i].compressed_physical_ptr = 0;
+            if (missing_pages == 0) {
+                first_missing_page = i;
+            }
+            ++missing_pages;
+            continue;
+        }
+        auto phys_addr =
+            static_cast<u32>(GetRawPhysicalAddr(ptr) >> Memory::CITRON_PAGEBITS) + 1U;
         entries[start_page_d + i].compressed_physical_ptr = phys_addr;
         InsertCPUBacking(start_page_d + i, new_vaddress, asid);
         const u32 base_dev = compressed_device_addr[phys_addr - 1U];
@@ -266,10 +252,24 @@ bool DeviceMemoryManager<Traits>::Map(DAddr address, VAddr virtual_address, size
         }
         impl->multi_dev_address.Register(new_dev, start_id);
     }
+    if (missing_pages != 0) {
+        static std::atomic<u64> partial_map_count{0};
+        const u64 count = partial_map_count.fetch_add(1, std::memory_order_relaxed) + 1;
+        if (count <= 8 || (count % 256) == 0) {
+            LOG_WARNING(HW_Memory,
+                        "Partial device map contains unbacked CPU pages (left unmapped): "
+                        "d_address=0x{:016X} v_address=0x{:016X} size={} "
+                        "first_missing_d=0x{:016X} first_missing_v=0x{:016X} "
+                        "first_missing_page={} missing_pages={} asid={} sample_count={}",
+                        address, virtual_address, size,
+                        address + first_missing_page * Memory::CITRON_PAGESIZE,
+                        virtual_address + first_missing_page * Memory::CITRON_PAGESIZE,
+                        first_missing_page, missing_pages, asid.id, count);
+        }
+    }
     if (track) {
         TrackContinuityImpl(address, virtual_address, size, asid);
     }
-    return true;
 }
 
 template <typename Traits>
