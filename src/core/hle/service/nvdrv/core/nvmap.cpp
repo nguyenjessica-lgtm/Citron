@@ -253,7 +253,7 @@ DAddr NvMap::PinHandle(NvMap::Handle::Id handle, bool low_area_pin) {
                     free_attempts++;
                 }
 
-                if (!freed_any || unmap_queue.empty()) {
+                if (!freed_any) {
                     LOG_CRITICAL(Service_NVDRV, "Ran out of SMMU address space! No more handles to free.");
                     // Break out of the loop to prevent infinite spinning when no handles can be freed
                     return 0;
