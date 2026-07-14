@@ -434,8 +434,14 @@ Result KMemoryManager::AllocateForProcess(KPageGroup* out, size_t num_pages, u32
 void KMemoryManager::PrepareForProcess(KPhysicalAddress address, size_t num_pages, Pool pool,
                                        u64 process_id, u8 fill_pattern) {
     const size_t pool_index = static_cast<size_t>(pool);
-    const bool optimized = m_has_optimized_process[pool_index] &&
-                           m_optimized_process_ids[pool_index] == process_id;
+    bool has_optimized_process;
+    u64 optimized_process_id;
+    {
+        KScopedLightLock lk(m_pool_locks[pool_index]);
+        has_optimized_process = m_has_optimized_process[pool_index];
+        optimized_process_id = m_optimized_process_ids[pool_index];
+    }
+    const bool optimized = has_optimized_process && optimized_process_id == process_id;
 
     while (num_pages > 0) {
         auto& manager = this->GetManager(address);
@@ -449,7 +455,7 @@ void KMemoryManager::PrepareForProcess(KPhysicalAddress address, size_t num_page
                 manager.TrackOptimizedAllocation(m_system.Kernel(), address, cur_pages);
             }
         } else {
-            if (m_has_optimized_process[pool_index]) {
+            if (has_optimized_process) {
                 KScopedLightLock lk(m_pool_locks[pool_index]);
                 manager.TrackUnoptimizedAllocation(m_system.Kernel(), address, cur_pages);
             }
