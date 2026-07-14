@@ -30,10 +30,8 @@ namespace VideoCommon {
 
 namespace {
 
-bool IsValidShaderEntryInstruction(Shader::Stage stage, u32 start_address, u32 code_lowest,
+bool IsValidShaderEntryInstruction(u32 initial_offset, u32 start_address, u32 code_lowest,
                                    u32 code_highest, std::span<const u64> code) noexcept {
-    const u32 initial_offset =
-        stage == Shader::Stage::Compute ? 0 : sizeof(Shader::ProgramHeader);
     u32 entry_address = start_address + initial_offset;
     // Maxwell stores one scheduling control word at the start of each 32-byte instruction group.
     // Match Location::Align() so validation checks the first instruction, not its scheduler word.
@@ -203,7 +201,8 @@ size_t GenericEnvironment::ReadSizeBytes() const noexcept {
 
 bool GenericEnvironment::CanBeSerialized() const noexcept {
     return !has_unbound_instructions &&
-           IsValidShaderEntryInstruction(stage, start_address, cached_lowest, cached_highest, code);
+           IsValidShaderEntryInstruction(initial_offset, start_address, cached_lowest,
+                                         cached_highest, code);
 }
 
 u64 GenericEnvironment::CalculateHash() const {
@@ -630,7 +629,8 @@ u64 FileEnvironment::ReadInstruction(u32 address) {
 }
 
 bool FileEnvironment::HasValidEntryInstruction() const noexcept {
-    return IsValidShaderEntryInstruction(stage, start_address, read_lowest, read_highest, code);
+    return IsValidShaderEntryInstruction(initial_offset, start_address, read_lowest, read_highest,
+                                         code);
 }
 
 u32 FileEnvironment::ReadCbufValue(u32 cbuf_index, u32 cbuf_offset) {

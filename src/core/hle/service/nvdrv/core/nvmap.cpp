@@ -239,12 +239,14 @@ DAddr NvMap::PinHandle(NvMap::Handle::Id handle, bool low_area_pin) {
                         // Handles in the unmap queue are guaranteed not to be pinned so don't
                         // bother checking if they are before unmapping
                         std::scoped_lock freeLock(freeHandleDesc->mutex);
-                        if (freeHandleDesc->d_address) {
-                            UnmapHandle(*freeHandleDesc);
-                            freed_any = true;
+                        const bool was_mapped = freeHandleDesc->d_address != 0;
+                        const bool has_unmap_queue_entry =
+                            freeHandleDesc->unmap_queue_entry.has_value();
+                        UnmapHandle(*freeHandleDesc);
+                        freed_any |= was_mapped;
+                        if (!has_unmap_queue_entry) {
+                            unmap_queue.pop_front();
                         }
-                        // Remove from queue even if d_address was 0 (already unmapped)
-                        unmap_queue.pop_front();
                     } else {
                         unmap_queue.pop_front();
                     }

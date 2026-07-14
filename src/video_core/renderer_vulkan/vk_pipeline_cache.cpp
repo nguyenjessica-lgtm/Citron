@@ -732,10 +732,6 @@ GraphicsPipeline* PipelineCache::CurrentGraphicsPipelineSlowPath() {
     if (!pipeline) {
         return nullptr;
     }
-    if (pipeline->IsFailed()) {
-        current_pipeline = pipeline.get();
-        return nullptr;
-    }
     if (transition_source && transition_source != pipeline.get()) {
         transition_source->AddTransition(pipeline.get());
     }
