@@ -964,7 +964,7 @@ jobjectArray Java_org_citron_citron_1emu_NativeLibrary_getPatchesForFile(JNIEnv*
             Common::Android::ToJString(env, patch.name),
             Common::Android::ToJString(env, patch.version), static_cast<jint>(patch.type),
             Common::Android::ToJString(env, std::to_string(patch.program_id)),
-            Common::Android::ToJString(env, std::to_string(patch.title_id)));
+            Common::Android::ToJString(env, std::to_string(patch.title_id)), patch.removable);
         env->SetObjectArrayElement(jpatchArray, i, jpatch);
         ++i;
     }
@@ -1004,7 +1004,7 @@ jobjectArray Java_org_citron_citron_1emu_NativeLibrary_getCheatsForFile(JNIEnv* 
         jobject jpatch = env->NewObject(
             Common::Android::GetPatchClass(), Common::Android::GetPatchConstructor(), cheat.enabled,
             jname, jversion, static_cast<jint>(FileSys::PatchType::Cheat), jpatchProgramId,
-            jbuildId);
+            jbuildId, false);
         env->SetObjectArrayElement(jpatchArray, i, jpatch);
         env->DeleteLocalRef(jpatch);
         env->DeleteLocalRef(jname);
@@ -1080,9 +1080,10 @@ void Java_org_citron_citron_1emu_NativeLibrary_removeUpdate(JNIEnv* env, jobject
 }
 
 void Java_org_citron_citron_1emu_NativeLibrary_removeDLC(JNIEnv* env, jobject jobj,
-                                                     jstring jprogramId) {
-    auto program_id = EmulationSession::GetProgramId(env, jprogramId);
-    ContentManager::RemoveAllDLC(EmulationSession::GetInstance().System(), program_id);
+                                                     jstring jtitleId) {
+    const auto title_id = EmulationSession::GetProgramId(env, jtitleId);
+    ContentManager::RemoveDLC(
+        EmulationSession::GetInstance().System().GetFileSystemController(), title_id);
 }
 
 void Java_org_citron_citron_1emu_NativeLibrary_removeMod(JNIEnv* env, jobject jobj, jstring jprogramId,
