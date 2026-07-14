@@ -1753,18 +1753,11 @@ bool Image::BlitScaleHelper(bool scale_up) {
     } else {
         // TODO: Use helper blits where applicable
         flags &= ~ImageFlagBits::Rescaled;
-        if (scale_up) {
-            // ScaleUp switches to the scaled image before attempting the blit. Keep using the
-            // initialized original image when this depth-only format has no supported helper path.
-            current_image = *original_image;
-        }
-
         static std::atomic<u64> unsupported_scale_count{0};
         const u64 count = unsupported_scale_count.fetch_add(1, std::memory_order_relaxed) + 1;
         if (count <= 8 || (count % 1024) == 0) {
             LOG_WARNING(Render_Vulkan,
-                        "Unsupported scaling format {} with aspect mask 0x{:X}; using original "
-                        "image [total: {}]",
+                        "Unsupported scaling format {} with aspect mask 0x{:X} [total: {}]",
                         info.format, static_cast<u32>(aspect_mask), count);
         }
         return false;
