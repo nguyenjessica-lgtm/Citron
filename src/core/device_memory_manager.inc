@@ -11,7 +11,6 @@
 #include "common/alignment.h"
 #include "common/assert.h"
 #include "common/div_ceil.h"
-#include "common/nvdec_lifetime_trace.h"
 #include "common/scope_exit.h"
 #include "common/settings.h"
 #include "core/device_memory.h"
@@ -212,12 +211,6 @@ void DeviceMemoryManager<Traits>::Free(DAddr start, size_t size) {
 template <typename Traits>
 void DeviceMemoryManager<Traits>::Map(DAddr address, VAddr virtual_address, size_t size, Asid asid,
                                       bool track) {
-    if (Common::NvdecLifetimeTrace::Overlaps(address, size)) {
-        LOG_WARNING(HW_Memory,
-                    "NVDEC-LIFETIME SMMU map d_address=0x{:016X} v_address=0x{:016X} "
-                    "size={} asid={} track={}",
-                    address, virtual_address, size, asid.id, track);
-    }
     Core::Memory::Memory* process_memory = registered_processes[asid.id];
     size_t start_page_d = address >> Memory::CITRON_PAGEBITS;
     size_t num_pages = Common::AlignUp(size, Memory::CITRON_PAGESIZE) >> Memory::CITRON_PAGEBITS;
@@ -276,10 +269,6 @@ template <typename Traits>
 void DeviceMemoryManager<Traits>::Unmap(DAddr address, size_t size) {
     if (address < 4096 || size == 0 || !device_inter) {
         return;
-    }
-    if (Common::NvdecLifetimeTrace::Overlaps(address, size)) {
-        LOG_WARNING(HW_Memory, "NVDEC-LIFETIME SMMU unmap d_address=0x{:016X} size={}", address,
-                    size);
     }
     size_t start_page_d = address >> Memory::CITRON_PAGEBITS;
     size_t num_pages = Common::AlignUp(size, Memory::CITRON_PAGESIZE) >> Memory::CITRON_PAGEBITS;
@@ -494,17 +483,7 @@ DeviceMemoryReadResult DeviceMemoryManager<Traits>::ReadBlockUnsafe(
     DAddr address, void* dest_pointer, size_t size,
     [[maybe_unused]] std::string_view call_site, bool report_unmapped) {
     static std::atomic<u64> unmapped_read_unsafe_count{0};
-    static std::atomic<u64> target_read_count{0};
     DeviceMemoryReadResult result;
-    if (Common::NvdecLifetimeTrace::Overlaps(address, size)) {
-        const u64 count = target_read_count.fetch_add(1, std::memory_order_relaxed) + 1;
-        if (count <= 8 || (count % 256) == 0) {
-            LOG_WARNING(HW_Memory,
-                        "NVDEC-LIFETIME Device read call_site={} d_address=0x{:016X} size={} "
-                        "sample_count={}",
-                        call_site, address, size, count);
-        }
-    }
     WalkBlock(
         address, size,
         [&](size_t copy_amount, DAddr current_vaddr) {

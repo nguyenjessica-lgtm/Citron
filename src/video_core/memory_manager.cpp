@@ -6,7 +6,6 @@
 #include "common/alignment.h"
 #include "common/assert.h"
 #include "common/logging.h"
-#include "common/nvdec_lifetime_trace.h"
 #include "core/core.h"
 #include "core/hle/kernel/k_page_table.h"
 #include "core/hle/kernel/k_process.h"
@@ -185,13 +184,6 @@ void MemoryManager::BindRasterizer(VideoCore::RasterizerInterface* rasterizer_) 
 
 GPUVAddr MemoryManager::Map(GPUVAddr gpu_addr, DAddr dev_addr, std::size_t size, PTEKind kind,
                             bool is_big_pages) {
-    if (Common::NvdecLifetimeTrace::Overlaps(dev_addr, size)) {
-        LOG_WARNING(HW_Memory,
-                    "NVDEC-LIFETIME GMMU map manager={} gpu_va=0x{:016X} d_address=0x{:016X} "
-                    "size={} big_pages={} kind={}",
-                    unique_identifier, gpu_addr, dev_addr, size, is_big_pages,
-                    static_cast<u32>(kind));
-    }
     if (is_big_pages) [[likely]] {
         return BigPageTableOp<EntryType::Mapped>(gpu_addr, dev_addr, size, kind);
     }
@@ -212,12 +204,6 @@ void MemoryManager::Unmap(GPUVAddr gpu_addr, std::size_t size) {
     GetSubmappedRangeImpl<false>(gpu_addr, size, page_stash);
 
     for (const auto& [map_addr, map_size] : page_stash) {
-        if (Common::NvdecLifetimeTrace::Overlaps(map_addr, map_size)) {
-            LOG_WARNING(HW_Memory,
-                        "NVDEC-LIFETIME GMMU unmap manager={} gpu_va=0x{:016X} "
-                        "d_address=0x{:016X} size={}",
-                        unique_identifier, gpu_addr, map_addr, map_size);
-        }
         rasterizer->UnmapMemory(map_addr, map_size);
     }
     page_stash.clear();
@@ -402,20 +388,8 @@ void MemoryManager::ReadBlockImpl(GPUVAddr gpu_src_addr, void* dest_buffer, std:
         dest_buffer = static_cast<u8*>(dest_buffer) + copy_amount;
     };
     auto mapped_big = [&](std::size_t page_index, std::size_t offset, std::size_t copy_amount) {
-        static std::atomic<u64> target_read_count{0};
         const DAddr dev_addr_base =
             (static_cast<DAddr>(big_page_table_dev[page_index]) << cpu_page_bits) + offset;
-        if (Common::NvdecLifetimeTrace::Overlaps(dev_addr_base, copy_amount)) {
-            const u64 count = target_read_count.fetch_add(1, std::memory_order_relaxed) + 1;
-            if (count <= 8 || (count % 256) == 0) {
-                LOG_WARNING(HW_Memory,
-                            "NVDEC-LIFETIME GMMU read manager={} call_site={} gpu_va=0x{:016X} "
-                            "d_address=0x{:016X} chunk_size={} request_size={} continuous={} "
-                            "sample_count={}",
-                            unique_identifier, call_site, gpu_src_addr, dev_addr_base, copy_amount,
-                            size, IsBigPageContinuous(page_index), count);
-            }
-        }
         if constexpr (is_safe) {
             rasterizer->FlushRegion(dev_addr_base, copy_amount, which);
         }

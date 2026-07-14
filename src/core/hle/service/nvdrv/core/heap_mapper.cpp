@@ -3,8 +3,6 @@
 
 #include <mutex>
 
-#include "common/logging.h"
-#include "common/nvdec_lifetime_trace.h"
 #include "common/range_sets.h"
 #include "common/range_sets.inc"
 #include "core/hle/service/nvdrv/core/heap_mapper.h"
@@ -56,13 +54,6 @@ DAddr HeapMapper::Map(VAddr start, size_t size) {
     m_internal->m_temporary_set.ForEach([this](VAddr start_addr, VAddr end_addr) {
         const size_t sub_size = end_addr - start_addr;
         const size_t offset = start_addr - m_vaddress;
-        const DAddr target_addr = m_daddress + offset;
-        if (Common::NvdecLifetimeTrace::Overlaps(target_addr, sub_size)) {
-            LOG_WARNING(Service_NVDRV,
-                        "NVDEC-LIFETIME HeapMapper map v_address=0x{:016X} "
-                        "d_address=0x{:016X} size={} heap_vbase=0x{:016X} heap_dbase=0x{:016X}",
-                        start_addr, target_addr, sub_size, m_vaddress, m_daddress);
-        }
         m_internal->m_device_memory.Map(m_daddress + offset, m_vaddress + offset, sub_size, m_asid);
     });
 
@@ -79,14 +70,7 @@ void HeapMapper::Unmap(VAddr start, size_t size) {
     m_internal->m_mapped_ranges.Subtract(start, size, [this](VAddr start_addr, VAddr end_addr) {
         const size_t sub_size = end_addr - start_addr;
         const size_t offset = start_addr - m_vaddress;
-        const DAddr target_addr = m_daddress + offset;
-        if (Common::NvdecLifetimeTrace::Overlaps(target_addr, sub_size)) {
-            LOG_WARNING(Service_NVDRV,
-                        "NVDEC-LIFETIME HeapMapper unmap v_address=0x{:016X} "
-                        "d_address=0x{:016X} size={} heap_vbase=0x{:016X} heap_dbase=0x{:016X}",
-                        start_addr, target_addr, sub_size, m_vaddress, m_daddress);
-        }
-        m_internal->m_device_memory.Unmap(target_addr, sub_size);
+        m_internal->m_device_memory.Unmap(m_daddress + offset, sub_size);
     });
 }
 

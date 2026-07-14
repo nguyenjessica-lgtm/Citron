@@ -137,10 +137,6 @@ NvResult nvhost_as_gpu::AllocAsEx(IoctlAllocAsEx& params) {
 
     gmmu = std::make_shared<Tegra::MemoryManager>(system, max_big_page_bits, vm.va_range_split,
                                                   vm.big_page_size_bits, VM::PAGE_SIZE_BITS);
-    LOG_WARNING(Service_NVDRV,
-                "NVDEC-LIFETIME GPU address space created manager={} big_page_bits={} "
-                "va_split=0x{:016X}",
-                gmmu->GetID(), vm.big_page_size_bits, vm.va_range_split);
     system.GPU().InitAddressSpace(*gmmu);
     vm.initialised = true;
 
@@ -463,8 +459,6 @@ NvResult nvhost_as_gpu::BindChannel(IoctlBindChannel& params) {
     LOG_DEBUG(Service_NVDRV, "called, fd={:X}", params.fd);
 
     auto gpu_channel_device = module.GetDevice<nvhost_gpu>(params.fd);
-    LOG_WARNING(Service_NVDRV, "NVDEC-LIFETIME GPU channel bind fd={} manager={}", params.fd,
-                gmmu ? gmmu->GetID() : static_cast<size_t>(-1));
     gpu_channel_device->channel_state->memory_manager = gmmu;
     return NvResult::Success;
 }
