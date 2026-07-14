@@ -162,9 +162,9 @@ NvResult nvhost_nvdec_common::MapBuffer(IoctlMapBuffer& params, std::span<MapBuf
         if (object &&
             Common::NvdecLifetimeTrace::Overlaps(object->d_address, object->aligned_size)) {
             const auto engine_it = core.Host1xDeviceFile().fd_to_id.find(fd);
-            const u32 engine_id = engine_it != core.Host1xDeviceFile().fd_to_id.end()
-                                      ? engine_it->second
-                                      : 0xFFFFFFFFU;
+            [[maybe_unused]] const u32 engine_id =
+                engine_it != core.Host1xDeviceFile().fd_to_id.end() ? engine_it->second
+                                                                    : 0xFFFFFFFFU;
             LOG_WARNING(Service_NVDRV,
                         "NVDEC-LIFETIME Host1x MapBuffer channel={} fd={} engine_id={} handle={} "
                         "d_address=0x{:016X} pin_virt_address=0x{:08X} returned=0x{:08X} "

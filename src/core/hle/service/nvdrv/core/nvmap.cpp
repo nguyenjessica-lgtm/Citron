@@ -81,7 +81,7 @@ void NvMap::AddHandle(std::shared_ptr<Handle> handle_description) {
     handles.emplace(handle_description->id, std::move(handle_description));
 }
 
-void NvMap::UnmapHandle(Handle& handle_description, std::string_view reason) {
+void NvMap::UnmapHandle(Handle& handle_description, [[maybe_unused]] std::string_view reason) {
     // Remove pending unmap queue entry if needed
     if (handle_description.unmap_queue_entry) {
         unmap_queue.erase(*handle_description.unmap_queue_entry);
@@ -195,7 +195,8 @@ DAddr NvMap::PinHandle(NvMap::Handle::Id handle, bool low_area_pin) {
     }
 
     std::scoped_lock lock(handle_description->mutex);
-    const auto trace_pin = [&](std::string_view path, DAddr result) {
+    [[maybe_unused]] const auto trace_pin = [&]([[maybe_unused]] std::string_view path,
+                                               [[maybe_unused]] DAddr result) {
         if (Common::NvdecLifetimeTrace::Overlaps(handle_description->d_address,
                                                  handle_description->aligned_size)) {
             LOG_WARNING(Service_NVDRV,
@@ -233,10 +234,12 @@ DAddr NvMap::PinHandle(NvMap::Handle::Id handle, bool low_area_pin) {
                 if (low_area_pin) {
                     map_low_area();
                     handle_description->pins++;
+                    trace_pin("unmap-queue-low", handle_description->pin_virt_address);
                     return static_cast<DAddr>(handle_description->pin_virt_address);
                 }
 
                 handle_description->pins++;
+                trace_pin("unmap-queue-smmu", handle_description->d_address);
                 return handle_description->d_address;
             }
         }
@@ -296,8 +299,10 @@ DAddr NvMap::PinHandle(NvMap::Handle::Id handle, bool low_area_pin) {
 
     handle_description->pins++;
     if (low_area_pin) {
+        trace_pin("low-area", handle_description->pin_virt_address);
         return static_cast<DAddr>(handle_description->pin_virt_address);
     }
+    trace_pin("smmu", handle_description->d_address);
     return handle_description->d_address;
 }
 

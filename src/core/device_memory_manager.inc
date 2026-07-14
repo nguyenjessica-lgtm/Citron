@@ -469,7 +469,7 @@ void DeviceMemoryManager<Traits>::WriteBlock(DAddr address, const void* src_poin
 
 template <typename Traits>
 void DeviceMemoryManager<Traits>::ReadBlockUnsafe(DAddr address, void* dest_pointer, size_t size,
-                                                  std::string_view call_site) {
+                                                  [[maybe_unused]] std::string_view call_site) {
     static std::atomic<u64> unmapped_read_unsafe_count{0};
     static std::atomic<u64> target_read_count{0};
     if (Common::NvdecLifetimeTrace::Overlaps(address, size)) {
