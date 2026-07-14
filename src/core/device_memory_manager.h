@@ -57,7 +57,9 @@ public:
     void AllocateFixed(DAddr start, size_t size);
     void Free(DAddr start, size_t size);
 
-    void Map(DAddr address, VAddr virtual_address, size_t size, Asid asid, bool track = false);
+    /// Maps a fully backed CPU range into the device address space.
+    /// Returns false without changing the device page table if any CPU page is missing.
+    bool Map(DAddr address, VAddr virtual_address, size_t size, Asid asid, bool track = false);
 
     void Unmap(DAddr address, size_t size);
 
