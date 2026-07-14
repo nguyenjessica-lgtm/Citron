@@ -468,10 +468,12 @@ void DeviceMemoryManager<Traits>::WriteBlock(DAddr address, const void* src_poin
 }
 
 template <typename Traits>
-void DeviceMemoryManager<Traits>::ReadBlockUnsafe(DAddr address, void* dest_pointer, size_t size,
-                                                  [[maybe_unused]] std::string_view call_site) {
+DeviceMemoryReadResult DeviceMemoryManager<Traits>::ReadBlockUnsafe(
+    DAddr address, void* dest_pointer, size_t size,
+    [[maybe_unused]] std::string_view call_site, bool report_unmapped) {
     static std::atomic<u64> unmapped_read_unsafe_count{0};
     static std::atomic<u64> target_read_count{0};
+    DeviceMemoryReadResult result;
     if (Common::NvdecLifetimeTrace::Overlaps(address, size)) {
         const u64 count = target_read_count.fetch_add(1, std::memory_order_relaxed) + 1;
         if (count <= 8 || (count % 256) == 0) {
@@ -484,13 +486,22 @@ void DeviceMemoryManager<Traits>::ReadBlockUnsafe(DAddr address, void* dest_poin
     WalkBlock(
         address, size,
         [&](size_t copy_amount, DAddr current_vaddr) {
-            const u64 count = unmapped_read_unsafe_count.fetch_add(1, std::memory_order_relaxed);
-            if (count < 5 || (count % 100 == 0)) {
-                LOG_ERROR(HW_Memory,
-                          "Unmapped Device ReadBlockUnsafe @ 0x{:016X} (start = 0x{:016X}, size = "
-                          "{}) [total: {}, call_site={}]. Try disabling async GPU emulation if "
-                          "crashes.",
-                          current_vaddr, address, size, count + 1, call_site);
+            if (result.fully_mapped) {
+                result.first_unmapped_address = current_vaddr;
+            }
+            result.fully_mapped = false;
+            result.unmapped_bytes += copy_amount;
+            if (report_unmapped) {
+                const u64 count =
+                    unmapped_read_unsafe_count.fetch_add(1, std::memory_order_relaxed);
+                if (count < 5 || (count % 100 == 0)) {
+                    LOG_ERROR(
+                        HW_Memory,
+                        "Unmapped Device ReadBlockUnsafe @ 0x{:016X} (start = 0x{:016X}, size = "
+                        "{}) [total: {}, call_site={}]. Try disabling async GPU emulation if "
+                        "crashes.",
+                        current_vaddr, address, size, count + 1, call_site);
+                }
             }
             std::memset(dest_pointer, 0, copy_amount);
         },
@@ -500,6 +511,7 @@ void DeviceMemoryManager<Traits>::ReadBlockUnsafe(DAddr address, void* dest_poin
         [&](const std::size_t copy_amount) {
             dest_pointer = static_cast<u8*>(dest_pointer) + copy_amount;
         });
+    return result;
 }
 
 template <typename Traits>

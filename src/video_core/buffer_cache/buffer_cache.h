@@ -5,11 +5,11 @@
 #pragma once
 
 #include <algorithm>
+#include <atomic>
 #include <memory>
 #include <numeric>
 
 #include "common/range_sets.inc"
-#include "citron/util/title_ids.h"
 #include "video_core/buffer_cache/buffer_cache_base.h"
 #include "video_core/guest_memory.h"
 #include "video_core/host1x/gpu_device_memory_manager.h"
@@ -839,8 +839,20 @@ void BufferCache<P>::BindHostGraphicsUniformBuffer(size_t stage, u32 index, u32 
         }
         // Stream buffer path to avoid stalling on non-Nvidia drivers or Vulkan
         const std::span<u8> span = runtime.BindMappedUniformBuffer(stage, binding_index, size);
-        device_memory.ReadBlockUnsafe(device_addr, span.data(), size,
-                                      "BufferCache.BindMappedUniformBuffer");
+        const auto read_result = device_memory.ReadBlockUnsafe(
+            device_addr, span.data(), size, "BufferCache.BindMappedUniformBuffer", false);
+        if (!read_result.fully_mapped) {
+            static std::atomic<u64> mapping_hole_count{0};
+            const u64 count = mapping_hole_count.fetch_add(1, std::memory_order_relaxed) + 1;
+            if (count <= 8 || (count % 256) == 0) {
+                LOG_WARNING(HW_Memory,
+                            "BufferCache mapped uniform contains unmapped pages: stage={} "
+                            "index={} binding_index={} buffer_id={} d_address=0x{:016X} size={} "
+                            "first_unmapped=0x{:016X} unmapped_bytes={} sample_count={}",
+                            stage, index, binding_index, binding.buffer_id.index, device_addr, size,
+                            read_result.first_unmapped_address, read_result.unmapped_bytes, count);
+            }
+        }
         return;
     }
     // Classic cached path
@@ -1554,20 +1566,62 @@ void BufferCache<P>::MappedUploadMemory([[maybe_unused]] Buffer& buffer,
         auto upload_staging = runtime.UploadStagingBuffer(total_size_bytes);
         const std::span<u8> staging_pointer = upload_staging.mapped_span;
 
-        // Validate staging buffer size to prevent buffer overruns
-        // This can happen if the requested size exceeds driver limits (e.g., 2GB)
-        // Only apply this workaround for Marvel Cosmic Invasion
-        if (program_id == UICommon::TitleID::MarvelCosmicInvasion &&
-            staging_pointer.size() < total_size_bytes) {
-            // Staging buffer is too small, skip this upload to avoid corruption
+        // Never form staging or buffer pointers until every copy has been bounds checked. A short
+        // staging allocation can occur when a request exceeds a driver's allocation limits.
+        const bool staging_too_small = staging_pointer.size() < total_size_bytes;
+        const auto invalid_copy = std::find_if(copies.begin(), copies.end(), [&](const auto& copy) {
+            const bool staging_out_of_bounds =
+                copy.src_offset > staging_pointer.size() ||
+                copy.size > staging_pointer.size() - copy.src_offset;
+            const bool buffer_out_of_bounds =
+                copy.dst_offset > buffer.SizeBytes() ||
+                copy.size > buffer.SizeBytes() - copy.dst_offset;
+            return staging_out_of_bounds || buffer_out_of_bounds;
+        });
+        if (staging_too_small || invalid_copy != copies.end()) {
+            static std::atomic<u64> invalid_upload_count{0};
+            const u64 count = invalid_upload_count.fetch_add(1, std::memory_order_relaxed) + 1;
+            if (count <= 8 || (count % 256) == 0) {
+                if (invalid_copy != copies.end()) {
+                    LOG_ERROR(HW_Memory,
+                              "BufferCache rejected out-of-bounds mapped upload: buffer_base="
+                              "0x{:016X} buffer_size={} staging_size={} total_size={} "
+                              "src_offset={} dst_offset={} copy_size={} sample_count={}",
+                              buffer.CpuAddr(), buffer.SizeBytes(), staging_pointer.size(),
+                              total_size_bytes, invalid_copy->src_offset, invalid_copy->dst_offset,
+                              invalid_copy->size, count);
+                } else {
+                    LOG_ERROR(HW_Memory,
+                              "BufferCache rejected short mapped upload staging allocation: "
+                              "buffer_base=0x{:016X} buffer_size={} staging_size={} total_size={} "
+                              "sample_count={}",
+                              buffer.CpuAddr(), buffer.SizeBytes(), staging_pointer.size(),
+                              total_size_bytes, count);
+                }
+            }
             return;
         }
 
         for (BufferCopy& copy : copies) {
             u8* const src_pointer = staging_pointer.data() + copy.src_offset;
             const DAddr device_addr = buffer.CpuAddr() + copy.dst_offset;
-            device_memory.ReadBlockUnsafe(device_addr, src_pointer, copy.size,
-                                          "BufferCache.UploadMemory.staging");
+            const auto read_result = device_memory.ReadBlockUnsafe(
+                device_addr, src_pointer, copy.size, "BufferCache.UploadMemory.staging", false);
+            if (!read_result.fully_mapped) {
+                static std::atomic<u64> mapping_hole_count{0};
+                const u64 count = mapping_hole_count.fetch_add(1, std::memory_order_relaxed) + 1;
+                if (count <= 8 || (count % 256) == 0) {
+                    LOG_WARNING(
+                        HW_Memory,
+                        "BufferCache mapped upload contains unmapped pages (zero-filled): "
+                        "buffer_base=0x{:016X} buffer_size={} d_address=0x{:016X} "
+                        "src_offset={} dst_offset={} copy_size={} total_size={} "
+                        "first_unmapped=0x{:016X} unmapped_bytes={} sample_count={}",
+                        buffer.CpuAddr(), buffer.SizeBytes(), device_addr, copy.src_offset,
+                        copy.dst_offset, copy.size, total_size_bytes,
+                        read_result.first_unmapped_address, read_result.unmapped_bytes, count);
+                }
+            }
 
             // Apply the staging offset
             copy.src_offset += upload_staging.offset;

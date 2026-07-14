@@ -36,6 +36,12 @@ struct Asid {
     size_t id;
 };
 
+struct DeviceMemoryReadResult {
+    bool fully_mapped{true};
+    DAddr first_unmapped_address{};
+    size_t unmapped_bytes{};
+};
+
 template <typename Traits>
 class DeviceMemoryManager {
     using DeviceInterface = typename Traits::DeviceInterface;
@@ -108,8 +114,13 @@ public:
     const u8* GetSpan(const DAddr src_addr, const std::size_t size) const;
 
     void ReadBlock(DAddr address, void* dest_pointer, size_t size);
-    void ReadBlockUnsafe(DAddr address, void* dest_pointer, size_t size,
-                         std::string_view call_site = "DeviceMemoryManager::ReadBlockUnsafe");
+    /// Reads a device range and zero-fills any unmapped portions.
+    /// The result describes any zero-filled mapping holes. Callers which deliberately handle holes
+    /// may disable the generic unmapped-read log and provide more useful local diagnostics.
+    DeviceMemoryReadResult ReadBlockUnsafe(
+        DAddr address, void* dest_pointer, size_t size,
+        std::string_view call_site = "DeviceMemoryManager::ReadBlockUnsafe",
+        bool report_unmapped = true);
     void WriteBlock(DAddr address, const void* src_pointer, size_t size);
     void WriteBlockUnsafe(DAddr address, const void* src_pointer, size_t size);
 
