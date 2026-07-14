@@ -436,8 +436,8 @@ void GraphicsPipeline::ConfigureImpl(bool is_indexed) {
                 const size_t byte_size =
                     static_cast<size_t>(desc.count) << desc.size_shift;
                 bindless_scratch.resize(byte_size);
-                gpu_memory->ReadBlockUnsafe(cbuf_addr, bindless_scratch.data(),
-                                            byte_size);
+                gpu_memory->ReadBlockUnsafe(cbuf_addr, bindless_scratch.data(), byte_size,
+                                            "Vulkan.GraphicsPipeline.bindless_cbuf");
                 BindlessCacheEntry& entry = AcquireBindlessEntry(
                     bindless_cache, bindless_cache_rr, cbuf_addr, desc.count,
                     image_table_generation);

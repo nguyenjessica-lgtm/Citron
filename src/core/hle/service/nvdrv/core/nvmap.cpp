@@ -9,6 +9,7 @@
 #include "common/assert.h"
 #include "common/common_types.h"
 #include "common/logging.h"
+#include "common/nvdec_lifetime_trace.h"
 #include "core/core.h"
 #include "core/hle/service/nvdrv/core/container.h"
 #include "core/hle/service/nvdrv/core/heap_mapper.h"
@@ -80,7 +81,7 @@ void NvMap::AddHandle(std::shared_ptr<Handle> handle_description) {
     handles.emplace(handle_description->id, std::move(handle_description));
 }
 
-void NvMap::UnmapHandle(Handle& handle_description) {
+void NvMap::UnmapHandle(Handle& handle_description, std::string_view reason) {
     // Remove pending unmap queue entry if needed
     if (handle_description.unmap_queue_entry) {
         unmap_queue.erase(*handle_description.unmap_queue_entry);
@@ -89,6 +90,18 @@ void NvMap::UnmapHandle(Handle& handle_description) {
 
     const bool has_gmmu_mapping = handle_description.pin_virt_address >= 0x1000;
     const bool has_smmu_mapping = handle_description.d_address >= 0x1000;
+    if (Common::NvdecLifetimeTrace::Overlaps(handle_description.d_address,
+                                             handle_description.aligned_size)) {
+        LOG_WARNING(Service_NVDRV,
+                    "NVDEC-LIFETIME NvMap unmap path={} handle={} d_address=0x{:016X} "
+                    "pin_virt_address=0x{:08X} v_address=0x{:016X} size={} pins={} dupes={} "
+                    "internal_dupes={} in_heap={} session={}",
+                    reason, handle_description.id, handle_description.d_address,
+                    handle_description.pin_virt_address, handle_description.address,
+                    handle_description.aligned_size, handle_description.pins,
+                    handle_description.dupes, handle_description.internal_dupes,
+                    handle_description.in_heap, handle_description.session_id.id);
+    }
     if (has_gmmu_mapping || has_smmu_mapping) {
         // Async GPU commands may still reference either mapping. Drain commands submitted before
         // the unmap so the device mapping cannot disappear while they are executing.
@@ -182,6 +195,19 @@ DAddr NvMap::PinHandle(NvMap::Handle::Id handle, bool low_area_pin) {
     }
 
     std::scoped_lock lock(handle_description->mutex);
+    const auto trace_pin = [&](std::string_view path, DAddr result) {
+        if (Common::NvdecLifetimeTrace::Overlaps(handle_description->d_address,
+                                                 handle_description->aligned_size)) {
+            LOG_WARNING(Service_NVDRV,
+                        "NVDEC-LIFETIME NvMap pin path={} handle={} result=0x{:016X} "
+                        "d_address=0x{:016X} pin_virt_address=0x{:08X} v_address=0x{:016X} "
+                        "size={} pins={} low_area={} in_heap={} session={}",
+                        path, handle_description->id, result, handle_description->d_address,
+                        handle_description->pin_virt_address, handle_description->address,
+                        handle_description->aligned_size, handle_description->pins, low_area_pin,
+                        handle_description->in_heap, handle_description->session_id.id);
+        }
+    };
     const auto map_low_area = [&] {
         if (handle_description->pin_virt_address == 0) {
             auto& gmmu_allocator = host1x.Allocator();
@@ -236,11 +262,11 @@ DAddr NvMap::PinHandle(NvMap::Handle::Id handle, bool low_area_pin) {
                 // Try to free multiple handles from the queue
                 while (!unmap_queue.empty() && free_attempts < MAX_FREE_ATTEMPTS) {
                     if (auto freeHandleDesc{unmap_queue.front()}) {
-                        // Handles in the unmap queue are guaranteed not to be pinned so don't bother
-                        // checking if they are before unmapping
+                        // Handles in the unmap queue are guaranteed not to be pinned so don't
+                        // bother checking if they are before unmapping
                         std::scoped_lock freeLock(freeHandleDesc->mutex);
                         if (freeHandleDesc->d_address) {
-                            UnmapHandle(*freeHandleDesc);
+                            UnmapHandle(*freeHandleDesc, "smmu-allocation-eviction");
                             freed_any = true;
                         }
                         // Remove from queue even if d_address was 0 (already unmapped)
@@ -282,6 +308,16 @@ void NvMap::UnpinHandle(Handle::Id handle) {
     }
 
     std::scoped_lock lock(handle_description->mutex);
+    if (Common::NvdecLifetimeTrace::Overlaps(handle_description->d_address,
+                                             handle_description->aligned_size)) {
+        LOG_WARNING(Service_NVDRV,
+                    "NVDEC-LIFETIME NvMap unpin handle={} d_address=0x{:016X} "
+                    "pin_virt_address=0x{:08X} size={} pins_before={} in_heap={} session={}",
+                    handle_description->id, handle_description->d_address,
+                    handle_description->pin_virt_address, handle_description->aligned_size,
+                    handle_description->pins, handle_description->in_heap,
+                    handle_description->session_id.id);
+    }
     if (--handle_description->pins < 0) {
         LOG_WARNING(Service_NVDRV, "Pin count imbalance detected!");
     } else if (!handle_description->pins) {
@@ -325,7 +361,7 @@ std::optional<NvMap::FreeInfo> NvMap::FreeHandle(Handle::Id handle, bool interna
                 // Force unmap the handle
                 if (handle_description->d_address) {
                     std::scoped_lock queueLock(unmap_queue_lock);
-                    UnmapHandle(*handle_description);
+                    UnmapHandle(*handle_description, "FreeHandle-last-user-reference");
                 }
 
                 handle_description->pins = 0;

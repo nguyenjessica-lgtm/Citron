@@ -76,6 +76,7 @@ void nvhost_vic::OnClose(DeviceFD fd) {
     auto& host1x_file = core.Host1xDeviceFile();
     const auto iter = host1x_file.fd_to_id.find(fd);
     if (iter != host1x_file.fd_to_id.end()) {
+        LOG_WARNING(Service_NVDRV, "NVDEC-LIFETIME VIC close fd={} engine_id={}", fd, iter->second);
         system.GPU().ClearCdmaInstance(iter->second);
     }
     sessions.erase(fd);

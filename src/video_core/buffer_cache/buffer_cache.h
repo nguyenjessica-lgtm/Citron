@@ -157,7 +157,7 @@ void BufferCache<P>::CachedWriteMemory(DAddr device_addr, u64 size) {
     }
 
     tmp_buffer.resize_destructive(size);
-    device_memory.ReadBlockUnsafe(device_addr, tmp_buffer.data(), size);
+    device_memory.ReadBlockUnsafe(device_addr, tmp_buffer.data(), size, "BufferCache.InlineMemory");
 
     InlineMemoryImplementation(device_addr, size, tmp_buffer);
 }
@@ -839,7 +839,8 @@ void BufferCache<P>::BindHostGraphicsUniformBuffer(size_t stage, u32 index, u32 
         }
         // Stream buffer path to avoid stalling on non-Nvidia drivers or Vulkan
         const std::span<u8> span = runtime.BindMappedUniformBuffer(stage, binding_index, size);
-        device_memory.ReadBlockUnsafe(device_addr, span.data(), size);
+        device_memory.ReadBlockUnsafe(device_addr, span.data(), size,
+                                      "BufferCache.BindMappedUniformBuffer");
         return;
     }
     // Classic cached path
@@ -1536,7 +1537,8 @@ void BufferCache<P>::ImmediateUploadMemory([[maybe_unused]] Buffer& buffer,
                 if (immediate_buffer.empty()) {
                     immediate_buffer = ImmediateBuffer(largest_copy);
                 }
-                device_memory.ReadBlockUnsafe(device_addr, immediate_buffer.data(), copy.size);
+                device_memory.ReadBlockUnsafe(device_addr, immediate_buffer.data(), copy.size,
+                                              "BufferCache.UploadMemory.immediate");
                 upload_span = immediate_buffer.subspan(0, copy.size);
             }
             buffer.ImmediateUpload(copy.dst_offset, upload_span);
@@ -1564,7 +1566,8 @@ void BufferCache<P>::MappedUploadMemory([[maybe_unused]] Buffer& buffer,
         for (BufferCopy& copy : copies) {
             u8* const src_pointer = staging_pointer.data() + copy.src_offset;
             const DAddr device_addr = buffer.CpuAddr() + copy.dst_offset;
-            device_memory.ReadBlockUnsafe(device_addr, src_pointer, copy.size);
+            device_memory.ReadBlockUnsafe(device_addr, src_pointer, copy.size,
+                                          "BufferCache.UploadMemory.staging");
 
             // Apply the staging offset
             copy.src_offset += upload_staging.offset;
@@ -1812,7 +1815,8 @@ std::span<const u8> BufferCache<P>::ImmediateBufferWithData(DAddr device_addr, s
         return std::span(base_pointer, size);
     } else {
         const std::span<u8> span = ImmediateBuffer(size);
-        device_memory.ReadBlockUnsafe(device_addr, span.data(), size);
+        device_memory.ReadBlockUnsafe(device_addr, span.data(), size,
+                                      "BufferCache.ImmediateBufferWithData");
         return span;
     }
 }

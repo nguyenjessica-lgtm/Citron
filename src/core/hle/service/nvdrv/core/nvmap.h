@@ -9,6 +9,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <string_view>
 #include <unordered_map>
 #include <assert.h>
 
@@ -173,7 +174,7 @@ private:
      * @brief Unmaps and frees the SMMU memory region a handle is mapped to
      * @note Both `unmap_queue_lock` and `handle_description.mutex` MUST be locked when calling this
      */
-    void UnmapHandle(Handle& handle_description);
+    void UnmapHandle(Handle& handle_description, std::string_view reason);
 
     /**
      * @brief Removes a handle from the map taking its dupes into account

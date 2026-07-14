@@ -11,6 +11,7 @@
 #include "common/alignment.h"
 #include "common/assert.h"
 #include "common/div_ceil.h"
+#include "common/nvdec_lifetime_trace.h"
 #include "common/scope_exit.h"
 #include "common/settings.h"
 #include "core/device_memory.h"
@@ -211,6 +212,12 @@ void DeviceMemoryManager<Traits>::Free(DAddr start, size_t size) {
 template <typename Traits>
 void DeviceMemoryManager<Traits>::Map(DAddr address, VAddr virtual_address, size_t size, Asid asid,
                                       bool track) {
+    if (Common::NvdecLifetimeTrace::Overlaps(address, size)) {
+        LOG_WARNING(HW_Memory,
+                    "NVDEC-LIFETIME SMMU map d_address=0x{:016X} v_address=0x{:016X} "
+                    "size={} asid={} track={}",
+                    address, virtual_address, size, asid.id, track);
+    }
     Core::Memory::Memory* process_memory = registered_processes[asid.id];
     size_t start_page_d = address >> Memory::CITRON_PAGEBITS;
     size_t num_pages = Common::AlignUp(size, Memory::CITRON_PAGESIZE) >> Memory::CITRON_PAGEBITS;
@@ -247,6 +254,10 @@ template <typename Traits>
 void DeviceMemoryManager<Traits>::Unmap(DAddr address, size_t size) {
     if (address < 4096 || size == 0 || !device_inter) {
         return;
+    }
+    if (Common::NvdecLifetimeTrace::Overlaps(address, size)) {
+        LOG_WARNING(HW_Memory, "NVDEC-LIFETIME SMMU unmap d_address=0x{:016X} size={}", address,
+                    size);
     }
     size_t start_page_d = address >> Memory::CITRON_PAGEBITS;
     size_t num_pages = Common::AlignUp(size, Memory::CITRON_PAGESIZE) >> Memory::CITRON_PAGEBITS;
@@ -457,8 +468,14 @@ void DeviceMemoryManager<Traits>::WriteBlock(DAddr address, const void* src_poin
 }
 
 template <typename Traits>
-void DeviceMemoryManager<Traits>::ReadBlockUnsafe(DAddr address, void* dest_pointer, size_t size) {
+void DeviceMemoryManager<Traits>::ReadBlockUnsafe(DAddr address, void* dest_pointer, size_t size,
+                                                  std::string_view call_site) {
     static std::atomic<u64> unmapped_read_unsafe_count{0};
+    if (Common::NvdecLifetimeTrace::Overlaps(address, size)) {
+        LOG_WARNING(HW_Memory,
+                    "NVDEC-LIFETIME Device read call_site={} d_address=0x{:016X} size={}",
+                    call_site, address, size);
+    }
     WalkBlock(
         address, size,
         [&](size_t copy_amount, DAddr current_vaddr) {
@@ -466,8 +483,9 @@ void DeviceMemoryManager<Traits>::ReadBlockUnsafe(DAddr address, void* dest_poin
             if (count < 5 || (count % 100 == 0)) {
                 LOG_ERROR(HW_Memory,
                           "Unmapped Device ReadBlockUnsafe @ 0x{:016X} (start = 0x{:016X}, size = "
-                          "{}) [total: {}]. Try disabling async GPU emulation if crashes.",
-                          current_vaddr, address, size, count + 1);
+                          "{}) [total: {}, call_site={}]. Try disabling async GPU emulation if "
+                          "crashes.",
+                          current_vaddr, address, size, count + 1, call_site);
             }
             std::memset(dest_pointer, 0, copy_amount);
         },

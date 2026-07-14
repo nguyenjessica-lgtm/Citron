@@ -10,6 +10,7 @@
 #include <deque>
 #include <memory>
 #include <mutex>
+#include <string_view>
 
 #include "common/common_types.h"
 #include "common/range_mutex.h"
@@ -107,7 +108,8 @@ public:
     const u8* GetSpan(const DAddr src_addr, const std::size_t size) const;
 
     void ReadBlock(DAddr address, void* dest_pointer, size_t size);
-    void ReadBlockUnsafe(DAddr address, void* dest_pointer, size_t size);
+    void ReadBlockUnsafe(DAddr address, void* dest_pointer, size_t size,
+                         std::string_view call_site = "DeviceMemoryManager::ReadBlockUnsafe");
     void WriteBlock(DAddr address, const void* src_pointer, size_t size);
     void WriteBlockUnsafe(DAddr address, const void* src_pointer, size_t size);
 

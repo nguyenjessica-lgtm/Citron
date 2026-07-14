@@ -9,9 +9,11 @@ namespace Tegra {
 namespace Host1x {
 
 Host1x::Host1x(Core::System& system_)
-    : system{system_}, syncpoint_manager{},
-      memory_manager(system.DeviceMemory()), gmmu_manager{system, memory_manager, 32, 0, 12},
-      allocator{std::make_unique<Common::FlatAllocator<u32, 0, 32>>(1 << 12)} {}
+    : system{system_}, syncpoint_manager{}, memory_manager(system.DeviceMemory()),
+      gmmu_manager{system, memory_manager, 32, 0, 12},
+      allocator{std::make_unique<Common::FlatAllocator<u32, 0, 32>>(1 << 12)} {
+    LOG_WARNING(Service_NVDRV, "NVDEC-LIFETIME Host1x GMMU manager={}", gmmu_manager.GetID());
+}
 
 Host1x::~Host1x() = default;
 

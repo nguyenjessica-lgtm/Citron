@@ -8,6 +8,7 @@
 #include "common/assert.h"
 #include "common/common_types.h"
 #include "common/logging.h"
+#include "common/nvdec_lifetime_trace.h"
 #include "core/core.h"
 #include "core/hle/kernel/k_process.h"
 #include "core/hle/service/nvdrv/core/container.h"
@@ -109,6 +110,15 @@ NvResult nvhost_nvdec_common::Submit(IoctlSubmit& params, std::span<u8> data, De
     for (const auto& cmd_buffer : command_buffers) {
         const auto object = nvmap.GetHandle(cmd_buffer.memory_id);
         ASSERT_OR_EXECUTE(object, return NvResult::InvalidState;);
+        if (Common::NvdecLifetimeTrace::Overlaps(object->d_address, object->aligned_size)) {
+            LOG_WARNING(Service_NVDRV,
+                        "NVDEC-LIFETIME Host1x submit channel={} fd={} engine_id={} "
+                        "command_handle={} d_address=0x{:016X} pin_virt_address=0x{:08X} "
+                        "cmd_offset={} words={}",
+                        static_cast<u32>(channel_type), fd, core.Host1xDeviceFile().fd_to_id[fd],
+                        object->id, object->d_address, object->pin_virt_address, cmd_buffer.offset,
+                        cmd_buffer.word_count);
+        }
         Tegra::ChCommandHeaderList cmdlist(cmd_buffer.word_count);
         session->process->GetMemory().ReadBlock(object->address + cmd_buffer.offset, cmdlist.data(),
                                                 cmdlist.size() * sizeof(u32));
@@ -143,10 +153,26 @@ NvResult nvhost_nvdec_common::MapBuffer(IoctlMapBuffer& params, std::span<MapBuf
     for (size_t i = 0; i < num_entries; i++) {
         DAddr pin_address = nvmap.PinHandle(entries[i].map_handle, true);
         if (!pin_address) {
-            LOG_ERROR(Service_NVDRV, "Failed to pin handle {}: SMMU address space exhausted", entries[i].map_handle);
+            LOG_ERROR(Service_NVDRV, "Failed to pin handle {}: SMMU address space exhausted",
+                      entries[i].map_handle);
             return NvResult::InsufficientMemory;
         }
         entries[i].map_address = static_cast<u32>(pin_address);
+        const auto object = nvmap.GetHandle(entries[i].map_handle);
+        if (object &&
+            Common::NvdecLifetimeTrace::Overlaps(object->d_address, object->aligned_size)) {
+            const auto engine_it = core.Host1xDeviceFile().fd_to_id.find(fd);
+            const u32 engine_id = engine_it != core.Host1xDeviceFile().fd_to_id.end()
+                                      ? engine_it->second
+                                      : 0xFFFFFFFFU;
+            LOG_WARNING(Service_NVDRV,
+                        "NVDEC-LIFETIME Host1x MapBuffer channel={} fd={} engine_id={} handle={} "
+                        "d_address=0x{:016X} pin_virt_address=0x{:08X} returned=0x{:08X} "
+                        "v_address=0x{:016X} size={} pins={}",
+                        static_cast<u32>(channel_type), fd, engine_id, object->id,
+                        object->d_address, object->pin_virt_address, entries[i].map_address,
+                        object->address, object->aligned_size, object->pins);
+        }
     }
 
     return NvResult::Success;
@@ -156,6 +182,15 @@ NvResult nvhost_nvdec_common::UnmapBuffer(IoctlMapBuffer& params,
                                           std::span<MapBufferEntry> entries) {
     const size_t num_entries = std::min(params.num_entries, static_cast<u32>(entries.size()));
     for (size_t i = 0; i < num_entries; i++) {
+        const auto object = nvmap.GetHandle(entries[i].map_handle);
+        if (object &&
+            Common::NvdecLifetimeTrace::Overlaps(object->d_address, object->aligned_size)) {
+            LOG_WARNING(Service_NVDRV,
+                        "NVDEC-LIFETIME Host1x UnmapBuffer channel={} handle={} "
+                        "d_address=0x{:016X} pin_virt_address=0x{:08X} size={} pins_before={}",
+                        static_cast<u32>(channel_type), object->id, object->d_address,
+                        object->pin_virt_address, object->aligned_size, object->pins);
+        }
         nvmap.UnpinHandle(entries[i].map_handle);
         entries[i] = {};
     }
