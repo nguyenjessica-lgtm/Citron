@@ -41,12 +41,19 @@ consteval std::pair<u64, u64> MaskValueFromEncoding(const char data[20]) noexcep
     return { mask, value };
 }
 
-Opcode Decode(u64 insn) {
+std::optional<Opcode> TryDecode(u64 insn) {
 #define INST(name, cute, encode) \
     if (auto const p = MaskValueFromEncoding(encode); (insn & p.first) == p.second) \
         return Opcode::name;
 #include "maxwell.inc"
 #undef INST
+    return std::nullopt;
+}
+
+Opcode Decode(u64 insn) {
+    if (const std::optional<Opcode> opcode = TryDecode(insn)) {
+        return *opcode;
+    }
     if (insn == 0) [[unlikely]] {
         static std::atomic<u64> zero_instruction_count{0};
         const u64 count = zero_instruction_count.fetch_add(1, std::memory_order_relaxed) + 1;

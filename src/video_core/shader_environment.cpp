@@ -19,6 +19,7 @@
 #include "common/logging.h"
 #include <ranges>
 #include "shader_recompiler/environment.h"
+#include "shader_recompiler/frontend/maxwell/decode.h"
 #include "video_core/engines/kepler_compute.h"
 #include "video_core/memory_manager.h"
 #include "video_core/shader_environment.h"
@@ -26,6 +27,28 @@
 #include "video_core/textures/texture.h"
 
 namespace VideoCommon {
+
+namespace {
+
+bool IsValidShaderEntryInstruction(Shader::Stage stage, u32 start_address, u32 code_lowest,
+                                   u32 code_highest, std::span<const u64> code) noexcept {
+    const u32 initial_offset =
+        stage == Shader::Stage::Compute ? 0 : sizeof(Shader::ProgramHeader);
+    u32 entry_address = start_address + initial_offset;
+    // Maxwell stores one scheduling control word at the start of each 32-byte instruction group.
+    // Match Location::Align() so validation checks the first instruction, not its scheduler word.
+    if (entry_address % 32 == 0) {
+        entry_address += sizeof(u64);
+    }
+    if (entry_address < code_lowest || entry_address > code_highest ||
+        (entry_address - code_lowest) % sizeof(u64) != 0) {
+        return false;
+    }
+    const size_t index = (entry_address - code_lowest) / sizeof(u64);
+    return index < code.size() && Shader::Maxwell::TryDecode(code[index]).has_value();
+}
+
+} // Anonymous namespace
 
 constexpr std::array<char, 8> MAGIC_NUMBER{'y', 'u', 'z', 'u', 'c', 'a', 'c', 'h'};
 
@@ -179,7 +202,8 @@ size_t GenericEnvironment::ReadSizeBytes() const noexcept {
 }
 
 bool GenericEnvironment::CanBeSerialized() const noexcept {
-    return !has_unbound_instructions;
+    return !has_unbound_instructions &&
+           IsValidShaderEntryInstruction(stage, start_address, cached_lowest, cached_highest, code);
 }
 
 u64 GenericEnvironment::CalculateHash() const {
@@ -603,6 +627,10 @@ u64 FileEnvironment::ReadInstruction(u32 address) {
         throw Shader::LogicError("Out of bounds address {}", address);
     }
     return code[(address - read_lowest) / sizeof(u64)];
+}
+
+bool FileEnvironment::HasValidEntryInstruction() const noexcept {
+    return IsValidShaderEntryInstruction(stage, start_address, read_lowest, read_highest, code);
 }
 
 u32 FileEnvironment::ReadCbufValue(u32 cbuf_index, u32 cbuf_offset) {
