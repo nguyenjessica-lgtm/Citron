@@ -38,6 +38,18 @@
 
     </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
 
+    <com.google.android.material.progressindicator.LinearProgressIndicator
+        android:id="@+id/scan_progress"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top"
+        android:indeterminate="true"
+        android:visibility="gone"
+        app:indicatorColor="?attr/colorOnSurfaceVariant"
+        app:trackColor="@android:color/transparent"
+        app:trackCornerRadius="1dp"
+        app:trackThickness="2dp" />
+
     <com.google.android.material.button.MaterialButton
         android:id="@+id/btn_view_toggle"
         style="?attr/materialIconButtonFilledStyle"

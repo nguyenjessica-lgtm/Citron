@@ -18,7 +18,6 @@ import androidx.preference.PreferenceManager
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import org.citron.citron_emu.layout.AutofitGridLayoutManager
-import com.google.android.material.color.MaterialColors
 import org.citron.citron_emu.R
 import org.citron.citron_emu.adapters.GameAdapter
 import org.citron.citron_emu.databinding.FragmentGamesBinding
@@ -78,34 +77,15 @@ class GamesFragment : Fragment() {
         binding.swipeRefresh.apply {
             // Add swipe down to refresh gesture
             setOnRefreshListener {
+                // The pull indicator only acknowledges the gesture. The quieter progress
+                // line represents the potentially long-running game scan.
+                isRefreshing = false
                 gamesViewModel.reloadGames(false)
-            }
-
-            // Set theme color to the refresh animation's background
-            setProgressBackgroundColorSchemeColor(
-                MaterialColors.getColor(
-                    binding.swipeRefresh,
-                    com.google.android.material.R.attr.colorOnPrimary
-                )
-            )
-            setColorSchemeColors(
-                MaterialColors.getColor(
-                    binding.swipeRefresh,
-                    com.google.android.material.R.attr.colorOnPrimary
-                )
-            )
-
-            // Make sure the loading indicator appears even if the layout is told to refresh before being fully drawn
-            post {
-                if (_binding == null) {
-                    return@post
-                }
-                binding.swipeRefresh.isRefreshing = gamesViewModel.isReloading.value
             }
         }
 
         gamesViewModel.isReloading.collect(viewLifecycleOwner) {
-            binding.swipeRefresh.isRefreshing = it
+            binding.scanProgress.setVisible(it)
             binding.noticeText.setVisible(
                 visible = gamesViewModel.games.value.isEmpty() && !it,
                 gone = false
@@ -214,6 +194,12 @@ class GamesFragment : Fragment() {
             )
 
             binding.swipeRefresh.updateMargins(left = leftInsets, right = rightInsets)
+
+            binding.scanProgress.updateMargins(
+                left = leftInsets,
+                top = barInsets.top,
+                right = rightInsets
+            )
 
             binding.noticeText.updatePadding(bottom = spacingNavigation)
 
