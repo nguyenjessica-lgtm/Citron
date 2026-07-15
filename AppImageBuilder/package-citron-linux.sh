@@ -433,13 +433,14 @@ if [ "${DEVEL:-false}" = 'true' ]; then
     sed -i 's|^Name=citron$|Name=citron nightly|' ./AppDir/*.desktop 2>/dev/null || true
 fi
 
-# Allow system Vulkan ICD to override the bundled one at runtime, and write
-# PGO profile data next to the running AppImage on exit (matches the old
-# linuxdeploy $APPIMAGE_DIR convention). $APPIMAGE is exported by sharun's
-# AppRun at runtime and points to the AppImage file's own path.
 # Allow system Vulkan ICD to override the bundled one at runtime. This is a
-# plain literal value, safe for dotenv parsing.
-printf 'SHARUN_ALLOW_SYS_VKICD=1\n' > ./AppDir/.env
+# plain literal value, safe for dotenv parsing. Replace-or-append rather than
+# truncate: quick-sharun's own deployment pass can write its own entries to
+# this same .env file (GTK/Qt renderer settings, ANYLINUX_DO_NOT_LOAD_LIBS,
+# etc. -- see the various ">> \"$APPENV\"" writes throughout quick-sharun.sh),
+# and a truncating write here would silently discard any of those.
+sed -i '/^SHARUN_ALLOW_SYS_VKICD=/d' ./AppDir/.env 2>/dev/null || true
+printf 'SHARUN_ALLOW_SYS_VKICD=1\n' >> ./AppDir/.env
 
 # Write PGO profile data next to the running AppImage on exit (matches the
 # old linuxdeploy $APPIMAGE_DIR convention). $APPIMAGE is exported by
@@ -471,8 +472,22 @@ HOOK_EOF
 chmod +x ./*.AppImage 2>/dev/null || true
 
 mkdir -p "${OUTPATH}"
-mv -v ./*.AppImage "${OUTPATH}/" 2>/dev/null || true
-mv -v ./*.AppImage.* "${OUTPATH}/" 2>/dev/null || true
+# OUTPATH normally *is* the current directory (build-citron-linux.sh sets it
+# to the same dir it just cd'd into) -- in that case the files are already
+# where they need to be, and `mv x ./` would just fail with a real "same
+# file" error. Only move when OUTPATH genuinely resolves elsewhere, and let
+# a real failure there actually fail the build instead of being silently
+# swallowed by a blanket || true.
+if [ "$(cd . && pwd -P)" != "$(cd "${OUTPATH}" && pwd -P)" ]; then
+    mv -v ./*.AppImage "${OUTPATH}/"
+    # .AppImage.* sidecars (.zsync etc.) are optional -- loop with an
+    # existence check rather than a bare glob, since POSIX sh has no
+    # nullglob and set -e would otherwise abort the build if none exist.
+    for f in ./*.AppImage.*; do
+        [ -e "$f" ] || continue
+        mv -v "$f" "${OUTPATH}/"
+    done
+fi
 
 # Pack the portable tar.zst alongside the AppImage — the "+ tar.zst" half
 # promised by this script's header comment, previously unimplemented.

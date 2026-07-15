@@ -444,7 +444,7 @@ _setup_apt() {
         libva-dev libva-drm2 libva-x11-2 \
         libdrm-dev \
         libx11-dev libxext-dev \
-        || warn "VAAPI+X11 group install failed — FFmpeg will build with --disable-vaapi and SDL2 without X11"
+        || error "VAAPI+X11 group install failed — a partial install would leave libva found but libdrm/X11 missing, which FFmpeg's cmake treats as a hard requirement once libva is found, causing a much less clear failure later"
 
     # ── VDPAU (NVIDIA legacy — independent of VAAPI) ─────────────────────────
     # libvdpau-dev → vdpau.pc; cmake detects independently of libva
@@ -505,8 +505,11 @@ _setup_pacman() {
         glslang clang lld llvm zstd \
         patchelf \
         elfutils libsystemd \
-        libglvnd libxkbcommon \
-        perf 2>/dev/null || true
+        libglvnd libxkbcommon
+    # perf is optional and kept out of the required transaction above so a
+    # missing/unavailable perf package can never mask a failure in the
+    # required compiler/build toolchain (matches the apt path).
+    sudo pacman -S --needed --noconfirm perf 2>/dev/null || true
 
     # ── VAAPI + X11 core (all-or-nothing) ───────────────────────────────────
     info "Installing VAAPI + X11 core packages (required together)..."
@@ -514,7 +517,7 @@ _setup_pacman() {
         libva libva-utils \
         libdrm \
         libx11 libxext \
-        || warn "VAAPI+X11 group install failed — FFmpeg will build with --disable-vaapi and SDL2 without X11"
+        || error "VAAPI+X11 group install failed — a partial install would leave libva found but libdrm/X11 missing, which FFmpeg's cmake treats as a hard requirement once libva is found, causing a much less clear failure later"
 
     # ── VDPAU (NVIDIA legacy — independent of VAAPI) ─────────────────────────
     info "Installing VDPAU hw-accel packages..."
@@ -557,8 +560,11 @@ _setup_dnf() {
         autoconf automake libtool make \
         glslang clang lld patchelf \
         elfutils-libelf-devel libudev-devel zstd \
-        libglvnd-devel libglvnd-opengl-devel libxkbcommon-devel \
-        perf 2>/dev/null || true
+        libglvnd-devel libglvnd-opengl-devel libxkbcommon-devel
+    # perf is optional and kept out of the required transaction above so a
+    # missing/unavailable perf package can never mask a failure in the
+    # required compiler/build toolchain (matches the apt path).
+    sudo dnf install -y perf 2>/dev/null || true
     sudo dnf install -y "clang${CLANG_VERSION}" "llvm${CLANG_VERSION}" 2>/dev/null \
         || warn "Versioned LLVM ${CLANG_VERSION} not in repos — using default clang."
 
@@ -568,7 +574,7 @@ _setup_dnf() {
         libva-devel \
         libdrm-devel \
         libX11-devel libXext-devel \
-        || warn "VAAPI+X11 group install failed — FFmpeg will build with --disable-vaapi and SDL2 without X11"
+        || error "VAAPI+X11 group install failed — a partial install would leave libva found but libdrm/X11 missing, which FFmpeg's cmake treats as a hard requirement once libva is found, causing a much less clear failure later"
 
     # ── VDPAU (NVIDIA legacy — independent of VAAPI) ─────────────────────────
     info "Installing VDPAU hw-accel packages..."
@@ -603,8 +609,11 @@ _setup_yum() {
         autoconf automake libtool make \
         clang lld patchelf \
         elfutils-libelf-devel libudev-devel zstd \
-        libglvnd-devel libglvnd-opengl-devel libxkbcommon-devel \
-        perf 2>/dev/null || true
+        libglvnd-devel libglvnd-opengl-devel libxkbcommon-devel
+    # perf is optional and kept out of the required transaction above so a
+    # missing/unavailable perf package can never mask a failure in the
+    # required compiler/build toolchain (matches the apt path).
+    sudo yum install -y perf 2>/dev/null || true
     warn "yum/CentOS: LLVM ${CLANG_VERSION} may not be in repos. Check SCL or llvm.org."
 
     # ── VAAPI + X11 core (all-or-nothing) ───────────────────────────────────
@@ -613,7 +622,7 @@ _setup_yum() {
         libva-devel \
         libdrm-devel \
         libX11-devel libXext-devel \
-        || warn "VAAPI+X11 group install failed — FFmpeg will build with --disable-vaapi and SDL2 without X11"
+        || error "VAAPI+X11 group install failed — a partial install would leave libva found but libdrm/X11 missing, which FFmpeg's cmake treats as a hard requirement once libva is found, causing a much less clear failure later"
 
     # ── VDPAU (NVIDIA legacy — independent of VAAPI) ─────────────────────────
     info "Installing VDPAU hw-accel packages..."
@@ -648,8 +657,11 @@ _setup_zypper() {
         autoconf automake libtool make \
         glslang clang lld llvm patchelf \
         libelf-devel libudev-devel zstd \
-        Mesa-libGL-devel libglvnd-devel libxkbcommon-devel \
-        perf 2>/dev/null || true
+        Mesa-libGL-devel libglvnd-devel libxkbcommon-devel
+    # perf is optional and kept out of the required transaction above so a
+    # missing/unavailable perf package can never mask a failure in the
+    # required compiler/build toolchain (matches the apt path).
+    sudo zypper install -y --no-recommends perf 2>/dev/null || true
 
     # ── VAAPI + X11 core (all-or-nothing) ───────────────────────────────────
     info "Installing VAAPI + X11 core packages (required together)..."
@@ -657,7 +669,7 @@ _setup_zypper() {
         libva-devel \
         libdrm-devel \
         libX11-devel libXext-devel \
-        || warn "VAAPI+X11 group install failed — FFmpeg will build with --disable-vaapi and SDL2 without X11"
+        || error "VAAPI+X11 group install failed — a partial install would leave libva found but libdrm/X11 missing, which FFmpeg's cmake treats as a hard requirement once libva is found, causing a much less clear failure later"
 
     # ── VDPAU (NVIDIA legacy — independent of VAAPI) ─────────────────────────
     info "Installing VDPAU hw-accel packages..."
@@ -703,7 +715,7 @@ _setup_emerge() {
         media-libs/libva \
         x11-libs/libdrm \
         x11-libs/libX11 x11-libs/libXext \
-        || warn "VAAPI+X11 group install failed — FFmpeg will build with --disable-vaapi and SDL2 without X11"
+        || error "VAAPI+X11 group install failed — a partial install would leave libva found but libdrm/X11 missing, which FFmpeg's cmake treats as a hard requirement once libva is found, causing a much less clear failure later"
 
     # ── VDPAU (NVIDIA legacy — independent of VAAPI) ─────────────────────────
     info "Installing VDPAU hw-accel packages..."
@@ -847,6 +859,28 @@ apply_source_patches() {
 # Profile helpers
 # =============================================================================
 
+_move_profraw_no_clobber() {
+    # Move every *.profraw from src_dir into dest_dir, renaming on collision
+    # rather than silently overwriting -- multiple source directories (see
+    # _collect_appimage_profiles below) can both contain a profile from the
+    # same PID, and mv'ing a whole glob at once would let the second source
+    # silently clobber a same-named file the first source already placed.
+    local src_dir="$1" dest_dir="$2"
+    local file
+    for file in "${src_dir}"/*.profraw; do
+        [[ -f "${file}" ]] || continue
+        local base="${file##*/}"
+        local stem="${base%.profraw}"
+        local target="${dest_dir}/${base}"
+        local idx=0
+        while [[ -e "${target}" ]]; do
+            idx=$((idx + 1))
+            target="${dest_dir}/${stem}-${idx}.profraw"
+        done
+        mv "${file}" "${target}"
+    done
+}
+
 normalize_profraw_dirs() {
     # IR PGO on Linux writes a directory named default-<pid>.profraw/ containing
     # numbered chunk files rather than a flat .profraw file.  Flatten them so
@@ -890,7 +924,7 @@ _collect_appimage_profiles() {
             local count; count="$(find "${profile_src}" -maxdepth 1 -name "*.profraw" 2>/dev/null | wc -l)"
             if [[ "${count}" -gt 0 ]]; then
                 info "Collecting ${count} profile(s) from ${profile_src}..."
-                mv "${profile_src}"/*.profraw "${PROFILE_DIR}/" 2>/dev/null || true
+                _move_profraw_no_clobber "${profile_src}" "${PROFILE_DIR}"
             fi
         fi
     done
@@ -902,7 +936,7 @@ _collect_appimage_profiles() {
             if [[ "${count}" -gt 0 ]]; then
                 info "Collecting ${count} CS profile(s) from ${profile_src}..."
                 mkdir -p "${PROFILE_DIR}/cs"
-                mv "${profile_src}"/*.profraw "${PROFILE_DIR}/cs/" 2>/dev/null || true
+                _move_profraw_no_clobber "${profile_src}" "${PROFILE_DIR}/cs"
             fi
         fi
     done
