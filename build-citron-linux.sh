@@ -382,7 +382,7 @@ _setup_apt() {
         glslang-tools \
         patchelf \
         lsb-release software-properties-common gnupg \
-        libelf-dev libssl-dev libzstd-dev libudev-dev zstd \
+        libelf-dev libzstd-dev libudev-dev zstd \
         libgl-dev libopengl-dev \
         libxkbcommon-dev
     # linux-tools-common/generic are best-effort: the versioned
@@ -498,37 +498,45 @@ _setup_apt() {
 _setup_pacman() {
     info "Installing build tools via pacman..."
     sudo pacman -Syu --needed --noconfirm \
-        base-devel cmake ninja git \
+        base-devel cmake ninja git pkgconf \
         python python-pip curl wget \
         nasm yasm perl \
         autoconf automake libtool make \
         glslang clang lld llvm zstd \
-        patchelf perf 2>/dev/null || true
+        patchelf \
+        elfutils libsystemd \
+        libglvnd libxkbcommon \
+        perf 2>/dev/null || true
 
-    # Hardware video acceleration for bundled FFmpeg (VAAPI / VDPAU)
-    # X11/XCB libraries required by SDL2 and Qt
+    # ── VAAPI + X11 core (all-or-nothing) ───────────────────────────────────
+    info "Installing VAAPI + X11 core packages (required together)..."
     sudo pacman -S --needed --noconfirm \
-        libva \
-        libva-utils \
+        libva libva-utils \
         libdrm \
-        libvdpau \
-        libx11 \
-        libxext \
+        libx11 libxext \
+        || warn "VAAPI+X11 group install failed — FFmpeg will build with --disable-vaapi and SDL2 without X11"
+
+    # ── VDPAU (NVIDIA legacy — independent of VAAPI) ─────────────────────────
+    info "Installing VDPAU hw-accel packages..."
+    sudo pacman -S --needed --noconfirm libvdpau \
+        || warn "libvdpau unavailable — FFmpeg will build with --disable-vdpau"
+
+    # ── Linux audio output (ALSA + PulseAudio) — REQUIRED, not optional ─────
+    info "Installing ALSA + PulseAudio dev packages (required for audio output)..."
+    sudo pacman -S --needed --noconfirm alsa-lib libpulse \
+        || error "ALSA/PulseAudio packages failed to install — Linux builds would have no audio output"
+
+    # ── X11 / XCB optional extras (SDL2 Xi/XSS/XCB, Qt XCB platform plugin) ─
+    info "Installing optional X11/XCB extension packages..."
+    sudo pacman -S --needed --noconfirm \
         libxi \
-        libxkbcommon-x11 \
-        libxss \
-        libxcb \
-        libxcb-cursor \
-        libxcb-image \
-        libxcb-render-util \
-        libxinerama 2>/dev/null || warn "Hardware acceleration libraries unavailable — FFmpeg will be software-decode only"
+        libxkbcommon-x11 libxss \
+        libxcb xcb-util-cursor xcb-util-image \
+        xcb-util-renderutil libxinerama \
+        2>/dev/null || warn "Some optional X11/XCB extension packages unavailable — optional display features may be limited"
 
     # Optional: bundled into the AppImage by package-citron-linux.sh if present.
     sudo pacman -S --needed --noconfirm gamemode 2>/dev/null || true
-
-    # ── Linux audio output (ALSA + PulseAudio) —
-    sudo pacman -S --needed --noconfirm alsa-lib libpulse \
-        || error "ALSA/PulseAudio packages failed to install — Linux builds would have no audio output"
 
     # Arch ships unversioned tools — symlink to versioned names
     for tool in clang clang++ lld llvm-profdata llvm-bolt merge-fdata; do
@@ -548,34 +556,41 @@ _setup_dnf() {
         nasm yasm perl \
         autoconf automake libtool make \
         glslang clang lld patchelf \
-        elfutils-libelf-devel openssl-devel libudev-devel zstd \
+        elfutils-libelf-devel libudev-devel zstd \
+        libglvnd-devel libglvnd-opengl-devel libxkbcommon-devel \
         perf 2>/dev/null || true
     sudo dnf install -y "clang${CLANG_VERSION}" "llvm${CLANG_VERSION}" 2>/dev/null \
         || warn "Versioned LLVM ${CLANG_VERSION} not in repos — using default clang."
 
-    # Hardware video acceleration for bundled FFmpeg (VAAPI / VDPAU)
-    # X11/XCB libraries required by SDL2 and Qt
+    # ── VAAPI + X11 core (all-or-nothing) ───────────────────────────────────
+    info "Installing VAAPI + X11 core packages (required together)..."
     sudo dnf install -y \
         libva-devel \
         libdrm-devel \
-        libvdpau-devel \
-        libX11-devel \
-        libXext-devel \
+        libX11-devel libXext-devel \
+        || warn "VAAPI+X11 group install failed — FFmpeg will build with --disable-vaapi and SDL2 without X11"
+
+    # ── VDPAU (NVIDIA legacy — independent of VAAPI) ─────────────────────────
+    info "Installing VDPAU hw-accel packages..."
+    sudo dnf install -y libvdpau-devel \
+        || warn "libvdpau-devel unavailable — FFmpeg will build with --disable-vdpau"
+
+    # ── Linux audio output (ALSA + PulseAudio) — REQUIRED, not optional ─────
+    info "Installing ALSA + PulseAudio dev packages (required for audio output)..."
+    sudo dnf install -y alsa-lib-devel pulseaudio-libs-devel \
+        || error "ALSA/PulseAudio dev packages failed to install — Linux builds would have no audio output"
+
+    # ── X11 / XCB optional extras (SDL2 Xi/XSS/XCB, Qt XCB platform plugin) ─
+    info "Installing optional X11/XCB extension packages..."
+    sudo dnf install -y \
         libXi-devel \
-        libxkbcommon-x11-devel \
-        libXScrnSaver-devel \
-        libxcb-devel \
-        libxcb-cursor-devel \
-        libxcb-image-devel \
-        libxcb-render-util-devel \
-        libXinerama-devel 2>/dev/null || warn "Hardware acceleration libraries unavailable — FFmpeg will be software-decode only"
+        libxkbcommon-x11-devel libXScrnSaver-devel \
+        libxcb-devel xcb-util-cursor-devel xcb-util-image-devel \
+        xcb-util-renderutil-devel libXinerama-devel \
+        2>/dev/null || warn "Some optional X11/XCB extension packages unavailable — optional display features may be limited"
 
     # Optional: bundled into the AppImage by package-citron-linux.sh if present.
     sudo dnf install -y gamemode 2>/dev/null || true
-
-    # ── Linux audio output (ALSA + PulseAudio) —
-    sudo dnf install -y alsa-lib-devel pulseaudio-libs-devel \
-        || error "ALSA/PulseAudio dev packages failed to install — Linux builds would have no audio output"
 }
 
 _setup_yum() {
@@ -587,17 +602,41 @@ _setup_yum() {
         nasm yasm perl \
         autoconf automake libtool make \
         clang lld patchelf \
-        elfutils-libelf-devel openssl-devel libudev-devel zstd \
+        elfutils-libelf-devel libudev-devel zstd \
+        libglvnd-devel libglvnd-opengl-devel libxkbcommon-devel \
         perf 2>/dev/null || true
     warn "yum/CentOS: LLVM ${CLANG_VERSION} may not be in repos. Check SCL or llvm.org."
+
+    # ── VAAPI + X11 core (all-or-nothing) ───────────────────────────────────
+    info "Installing VAAPI + X11 core packages (required together)..."
+    sudo yum install -y \
+        libva-devel \
+        libdrm-devel \
+        libX11-devel libXext-devel \
+        || warn "VAAPI+X11 group install failed — FFmpeg will build with --disable-vaapi and SDL2 without X11"
+
+    # ── VDPAU (NVIDIA legacy — independent of VAAPI) ─────────────────────────
+    info "Installing VDPAU hw-accel packages..."
+    sudo yum install -y libvdpau-devel \
+        || warn "libvdpau-devel unavailable — FFmpeg will build with --disable-vdpau"
+
+    # ── Linux audio output (ALSA + PulseAudio) — REQUIRED, not optional ─────
+    info "Installing ALSA + PulseAudio dev packages (required for audio output)..."
+    sudo yum install -y alsa-lib-devel pulseaudio-libs-devel \
+        || error "ALSA/PulseAudio dev packages failed to install — Linux builds would have no audio output"
+
+    # ── X11 / XCB optional extras (SDL2 Xi/XSS/XCB, Qt XCB platform plugin) ─
+    info "Installing optional X11/XCB extension packages..."
+    sudo yum install -y \
+        libXi-devel \
+        libxkbcommon-x11-devel libXScrnSaver-devel \
+        libxcb-devel xcb-util-cursor-devel xcb-util-image-devel \
+        xcb-util-renderutil-devel libXinerama-devel \
+        2>/dev/null || warn "Some optional X11/XCB extension packages unavailable — optional display features may be limited"
 
     # Optional: bundled into the AppImage by package-citron-linux.sh if present.
     # May require EPEL or an RPM Fusion-style repo on RHEL-based distros.
     sudo yum install -y gamemode 2>/dev/null || true
-
-    # ── Linux audio output (ALSA + PulseAudio) —
-    sudo yum install -y alsa-lib-devel pulseaudio-libs-devel \
-        || error "ALSA/PulseAudio dev packages failed to install — Linux builds would have no audio output"
 }
 
 _setup_zypper() {
@@ -608,43 +647,85 @@ _setup_zypper() {
         nasm yasm perl \
         autoconf automake libtool make \
         glslang clang lld llvm patchelf \
-        libelf-devel libopenssl-devel libudev-devel zstd \
+        libelf-devel libudev-devel zstd \
+        Mesa-libGL-devel libglvnd-devel libxkbcommon-devel \
         perf 2>/dev/null || true
 
-    # Hardware video acceleration for bundled FFmpeg (VAAPI / VDPAU)
+    # ── VAAPI + X11 core (all-or-nothing) ───────────────────────────────────
+    info "Installing VAAPI + X11 core packages (required together)..."
     sudo zypper install -y --no-recommends \
         libva-devel \
         libdrm-devel \
-        libvdpau-devel \
-        libX11-devel \
-        libXext-devel 2>/dev/null || warn "Hardware acceleration libraries unavailable — FFmpeg will be software-decode only"
+        libX11-devel libXext-devel \
+        || warn "VAAPI+X11 group install failed — FFmpeg will build with --disable-vaapi and SDL2 without X11"
+
+    # ── VDPAU (NVIDIA legacy — independent of VAAPI) ─────────────────────────
+    info "Installing VDPAU hw-accel packages..."
+    sudo zypper install -y --no-recommends libvdpau-devel \
+        || warn "libvdpau-devel unavailable — FFmpeg will build with --disable-vdpau"
+
+    # ── Linux audio output (ALSA + PulseAudio) — REQUIRED, not optional ─────
+    info "Installing ALSA + PulseAudio dev packages (required for audio output)..."
+    sudo zypper install -y --no-recommends alsa-devel libpulse-devel \
+        || error "ALSA/PulseAudio dev packages failed to install — Linux builds would have no audio output"
+
+    # ── X11 / XCB optional extras (SDL2 Xi/XSS/XCB, Qt XCB platform plugin) ─
+    info "Installing optional X11/XCB extension packages..."
+    sudo zypper install -y --no-recommends \
+        libXi-devel \
+        libxkbcommon-x11-devel libXss-devel \
+        libxcb-devel xcb-util-cursor-devel xcb-util-image-devel \
+        xcb-util-renderutil-devel libXinerama-devel Mesa-libGLESv2-devel \
+        2>/dev/null || warn "Some optional X11/XCB extension packages unavailable — optional display features may be limited"
 
     # Optional: bundled into the AppImage by package-citron-linux.sh if present.
     sudo zypper install -y --no-recommends gamemode 2>/dev/null || true
-
-    # ── Linux audio output (ALSA + PulseAudio) — 
-    sudo zypper install -y --no-recommends alsa-devel libpulse-devel \
-        || error "ALSA/PulseAudio dev packages failed to install — Linux builds would have no audio output"
 }
 
 _setup_emerge() {
     info "Installing build tools via emerge..."
     sudo emerge --ask=n \
         dev-build/cmake dev-build/ninja dev-vcs/git \
-        dev-lang/python dev-lang/perl \
+        dev-lang/python dev-python/pip net-misc/curl net-misc/wget \
+        dev-lang/perl \
         dev-lang/nasm dev-lang/yasm \
         sys-devel/clang sys-devel/lld \
         dev-build/autoconf dev-build/automake sys-devel/libtool \
         media-libs/glslang \
         dev-util/patchelf \
-        dev-libs/elfutils dev-libs/openssl sys-apps/util-linux app-arch/zstd 2>/dev/null || true
+        dev-libs/elfutils virtual/udev app-arch/zstd \
+        media-libs/libglvnd x11-libs/libxkbcommon \
+        sys-apps/util-linux 2>/dev/null || true
+
+    # ── VAAPI + X11 core (all-or-nothing) ───────────────────────────────────
+    info "Installing VAAPI + X11 core packages (required together)..."
+    sudo emerge --ask=n \
+        media-libs/libva \
+        x11-libs/libdrm \
+        x11-libs/libX11 x11-libs/libXext \
+        || warn "VAAPI+X11 group install failed — FFmpeg will build with --disable-vaapi and SDL2 without X11"
+
+    # ── VDPAU (NVIDIA legacy — independent of VAAPI) ─────────────────────────
+    info "Installing VDPAU hw-accel packages..."
+    sudo emerge --ask=n x11-libs/libvdpau \
+        || warn "libvdpau unavailable — FFmpeg will build with --disable-vdpau"
+
+    # ── Linux audio output (ALSA + PulseAudio) — REQUIRED, not optional ─────
+    info "Installing ALSA + PulseAudio dev packages (required for audio output)..."
+    sudo emerge --ask=n media-libs/alsa-lib media-libs/libpulse \
+        || error "ALSA/PulseAudio packages failed to install — Linux builds would have no audio output"
+
+    # ── X11 / XCB optional extras (SDL2 Xi/XSS/XCB, Qt XCB platform plugin) ─
+    info "Installing optional X11/XCB extension packages..."
+    sudo emerge --ask=n \
+        x11-libs/libXi \
+        x11-libs/libXScrnSaver \
+        x11-libs/libxcb x11-libs/xcb-util-cursor x11-libs/xcb-util-image \
+        x11-libs/xcb-util-renderutil x11-libs/libXinerama \
+        2>/dev/null || warn "Some optional X11/XCB extension packages unavailable — optional display features may be limited"
 
     # Optional: bundled into the AppImage by package-citron-linux.sh if present.
     sudo emerge --ask=n games-util/gamemode 2>/dev/null || true
-
-    # ── Linux audio output (ALSA + PulseAudio) — 
-    sudo emerge --ask=n media-libs/alsa-lib media-libs/libpulse \
-        || error "ALSA/PulseAudio packages failed to install — Linux builds would have no audio output"
 }
 
 _install_llvm_clang() {
