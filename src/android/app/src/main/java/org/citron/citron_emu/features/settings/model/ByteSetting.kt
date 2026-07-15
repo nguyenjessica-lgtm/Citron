@@ -19,7 +19,8 @@ enum class ByteSetting(override val key: String) : AbstractByteSetting {
 
     override val defaultValue: Byte by lazy { NativeConfig.getDefaultToString(key).toByte() }
 
-    override fun getValueAsString(needsGlobal: Boolean): String = getByte(needsGlobal).toString()
+    override fun getValueAsString(needsGlobal: Boolean): String =
+        (getByte(needsGlobal).toInt() and 0xFF).toString()
 
     override fun reset() = NativeConfig.setByte(key, defaultValue)
 }
