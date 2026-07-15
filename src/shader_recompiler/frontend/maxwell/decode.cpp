@@ -5,7 +5,6 @@
 
 #include <algorithm>
 #include <array>
-#include <atomic>
 #include <bit>
 #include <memory>
 #include <ranges>
@@ -55,13 +54,6 @@ Opcode Decode(u64 insn) {
         return *opcode;
     }
     if (insn == 0) [[unlikely]] {
-        static std::atomic<u64> zero_instruction_count{0};
-        const u64 count = zero_instruction_count.fetch_add(1, std::memory_order_relaxed) + 1;
-        if (count <= 8 || (count % 4096) == 0) {
-            LOG_CRITICAL(Debug,
-                         "Assertion Failed!\nInvalid insn 0x{:016x} [zero instruction total: {}]",
-                         insn, count);
-        }
         return Opcode::NOP;
     }
     ASSERT_MSG(false, "Invalid insn 0x{:016x}", insn);

@@ -1818,20 +1818,21 @@ Binding BufferCache<P>::StorageBufferBinding(GPUVAddr ssbo_addr, u32 cbuf_index,
         const u32 memory_layout_size = static_cast<u32>(gpu_memory->GetMemoryLayoutSize(gpu_addr));
         return std::min(memory_layout_size, static_cast<u32>(8_MiB));
     }();
+    if (size == 0) {
+        return NULL_BINDING;
+    }
     // Alignment only applies to the offset of the buffer
     const u32 alignment = runtime.GetStorageBufferAlignment();
     const GPUVAddr aligned_gpu_addr = Common::AlignDown(gpu_addr, alignment);
     const u32 aligned_size = static_cast<u32>(gpu_addr - aligned_gpu_addr) + size;
 
     const std::optional<DAddr> aligned_device_addr = gpu_memory->GpuToCpuAddress(aligned_gpu_addr);
-    if (!aligned_device_addr || size == 0) {
-        static std::atomic<u64> missing_storage_buffer_count{0};
-        const u64 count =
-            missing_storage_buffer_count.fetch_add(1, std::memory_order_relaxed) + 1;
-        if (count <= 8 || (count % 4096) == 0) {
-            LOG_WARNING(HW_GPU,
-                        "Failed to find storage buffer for cbuf index {} (sample_count={})",
-                        cbuf_index, count);
+    if (!aligned_device_addr) {
+        if (!std::exchange(channel_state->has_logged_unmapped_storage_buffer, true)) {
+            LOG_DEBUG(HW_GPU,
+                      "Failed to map storage buffer for cbuf index {} at GPU address 0x{:016X}; "
+                      "suppressing further messages for this channel",
+                      cbuf_index, aligned_gpu_addr);
         }
         return NULL_BINDING;
     }
