@@ -19,9 +19,9 @@ import androidx.preference.PreferenceManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.citron.citron_emu.CitronApplication
 import org.citron.citron_emu.HomeNavigationDirections
 import org.citron.citron_emu.R
-import org.citron.citron_emu.CitronApplication
 import org.citron.citron_emu.databinding.CardGameCoverBinding
 import org.citron.citron_emu.databinding.CardGameListBinding
 import org.citron.citron_emu.model.Game
@@ -43,8 +43,6 @@ class GameAdapter(private val activity: AppCompatActivity, private var tilesMode
             notifyDataSetChanged()
         }
     }
-
-    fun isTilesMode(): Boolean = tilesMode
 
     override fun getItemViewType(position: Int): Int =
         if (tilesMode) VIEW_TYPE_TILES else VIEW_TYPE_LIST

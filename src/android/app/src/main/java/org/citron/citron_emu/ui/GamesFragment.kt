@@ -17,10 +17,10 @@ import androidx.fragment.app.activityViewModels
 import androidx.preference.PreferenceManager
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
-import org.citron.citron_emu.layout.AutofitGridLayoutManager
 import org.citron.citron_emu.R
 import org.citron.citron_emu.adapters.GameAdapter
 import org.citron.citron_emu.databinding.FragmentGamesBinding
+import org.citron.citron_emu.layout.AutofitGridLayoutManager
 import org.citron.citron_emu.model.GamesViewModel
 import org.citron.citron_emu.model.HomeViewModel
 import org.citron.citron_emu.utils.ViewUtils.setVisible
@@ -40,9 +40,10 @@ class GamesFragment : Fragment() {
 
     companion object {
         private const val PREF_VIEW_MODE = "pref_games_view_mode"
-        const val VIEW_MODE_LIST = 0
-        const val VIEW_MODE_TILES_2 = 1
-        const val VIEW_MODE_TILES_3 = 2
+        private const val VIEW_MODE_LIST = 0
+        private const val VIEW_MODE_GRID = 1
+        private const val VIEW_MODE_COMPACT_GRID = 2
+        private const val VIEW_MODE_COUNT = 3
     }
 
     override fun onCreateView(
@@ -75,10 +76,8 @@ class GamesFragment : Fragment() {
         updateToggleButton()
 
         binding.swipeRefresh.apply {
-            // Add swipe down to refresh gesture
             setOnRefreshListener {
-                // The pull indicator only acknowledges the gesture. The quieter progress
-                // line represents the potentially long-running game scan.
+                // Use the progress bar for the potentially long-running game scan.
                 isRefreshing = false
                 gamesViewModel.reloadGames(false)
             }
@@ -116,11 +115,11 @@ class GamesFragment : Fragment() {
 
     private fun layoutManagerForMode(mode: Int): RecyclerView.LayoutManager =
         when (mode) {
-            VIEW_MODE_TILES_2 -> AutofitGridLayoutManager(
+            VIEW_MODE_GRID -> AutofitGridLayoutManager(
                 requireContext(),
                 resources.getDimensionPixelSize(R.dimen.card_width)
             )
-            VIEW_MODE_TILES_3 -> AutofitGridLayoutManager(
+            VIEW_MODE_COMPACT_GRID -> AutofitGridLayoutManager(
                 requireContext(),
                 resources.getDimensionPixelSize(R.dimen.card_width_small)
             )
@@ -130,7 +129,10 @@ class GamesFragment : Fragment() {
     private fun updateToggleButton() {
         val (iconRes, descRes) = when (viewMode) {
             VIEW_MODE_LIST -> Pair(R.drawable.ic_view_grid, R.string.switch_to_grid_view)
-            VIEW_MODE_TILES_2 -> Pair(R.drawable.ic_view_grid_3, R.string.switch_to_grid_view_3col)
+            VIEW_MODE_GRID -> Pair(
+                R.drawable.ic_view_grid_3,
+                R.string.switch_to_compact_grid_view
+            )
             else -> Pair(R.drawable.ic_view_list, R.string.switch_to_list_view)
         }
         binding.btnViewToggle.setIconResource(iconRes)
@@ -138,18 +140,18 @@ class GamesFragment : Fragment() {
     }
 
     private fun toggleViewMode() {
-        viewMode = (viewMode + 1) % 3
+        val previousViewMode = viewMode
+        viewMode = (viewMode + 1) % VIEW_MODE_COUNT
         preferences.edit().putInt(PREF_VIEW_MODE, viewMode).apply()
 
         binding.gridGames.layoutManager = layoutManagerForMode(viewMode)
         gameAdapter.setTilesMode(viewMode != VIEW_MODE_LIST)
-        // Force rebind when cycling between tile modes (both are VIEW_TYPE_TILES so
-        // setTilesMode's guard won't call notifyDataSetChanged, but we need the grid
-        // to re-measure with the new span count).
-        if (viewMode != VIEW_MODE_LIST) {
+        // Grid modes share a view type, so rebind items at the new size.
+        if (previousViewMode != VIEW_MODE_LIST && viewMode != VIEW_MODE_LIST) {
             gameAdapter.notifyDataSetChanged()
         }
         updateToggleButton()
+        ViewCompat.requestApplyInsets(binding.root)
     }
 
     private fun scrollToTop() {
@@ -168,24 +170,11 @@ class GamesFragment : Fragment() {
             val spacingNavigation = resources.getDimensionPixelSize(R.dimen.spacing_navigation)
             val spacingNavigationRail =
                 resources.getDimensionPixelSize(R.dimen.spacing_navigation_rail)
+            val bottomSpacing = maxOf(spacingNavigation, spacingNavigationRail)
 
-            val leftInsets = barInsets.left + cutoutInsets.left
-            val rightInsets = barInsets.right + cutoutInsets.right
-
-            // spacing_navigation_rail is 80dp on w600dp screens, but this app has no
-            // NavigationRailView — only a BottomNavigationView. Don't apply rail spacing.
-            // spacing_navigation is 0dp on w600dp screens, but the BottomNavigationView is
-            // still visible in landscape. Use spacing_navigation_rail as the bottom fallback
-            // so the last row is never hidden behind the bottom nav.
-            val bottomNav = maxOf(
-                spacingNavigation,
-                spacingNavigationRail  // 80dp on w600dp ≈ bottom nav height; 0dp elsewhere
-            )
             binding.gridGames.updatePadding(
                 top = barInsets.top + extraListSpacing,
-                bottom = barInsets.bottom + bottomNav + extraListSpacing,
-                left = 0,
-                right = 0
+                bottom = barInsets.bottom + bottomSpacing + extraListSpacing
             )
 
             binding.swipeRefresh.setProgressViewEndTarget(
@@ -193,20 +182,28 @@ class GamesFragment : Fragment() {
                 barInsets.top + resources.getDimensionPixelSize(R.dimen.spacing_refresh_end)
             )
 
-            binding.swipeRefresh.updateMargins(left = leftInsets, right = rightInsets)
+            val leftInsets = barInsets.left + cutoutInsets.left
+            val rightInsets = barInsets.right + cutoutInsets.right
+            val railInset = if (viewMode == VIEW_MODE_LIST) spacingNavigationRail else 0
+            val left = leftInsets +
+                if (view.layoutDirection == View.LAYOUT_DIRECTION_LTR) railInset else 0
+            val right = rightInsets +
+                if (view.layoutDirection == View.LAYOUT_DIRECTION_RTL) railInset else 0
+            binding.swipeRefresh.updateMargins(left = left, right = right)
 
             binding.scanProgress.updateMargins(
-                left = leftInsets,
+                left = left,
                 top = barInsets.top,
-                right = rightInsets
+                right = right
             )
 
             binding.noticeText.updatePadding(bottom = spacingNavigation)
 
-            // Push toggle button below status bar and clear of system bar / cutout on the end edge
+            val toggleSpacing = resources.getDimensionPixelSize(R.dimen.spacing_med)
             binding.btnViewToggle.updateMargins(
-                top = barInsets.top + resources.getDimensionPixelSize(R.dimen.spacing_med),
-                right = rightInsets + resources.getDimensionPixelSize(R.dimen.spacing_med)
+                left = leftInsets + toggleSpacing,
+                top = barInsets.top + toggleSpacing,
+                right = rightInsets + toggleSpacing
             )
 
             windowInsets
