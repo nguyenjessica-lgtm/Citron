@@ -600,6 +600,7 @@ void PipelineCache::LoadDiskResources(u64 title_id, std::stop_token stop_loading
         size_t total_compute{};
         size_t total_graphics{};
         size_t invalid{};
+        size_t feature_mismatch{};
     } state;
 
     if (device.IsKhrPipelineExecutablePropertiesEnabled()) {
@@ -655,7 +656,7 @@ void PipelineCache::LoadDiskResources(u64 title_id, std::stop_token stop_loading
             // device capability AND per-pipeline runtime state. We only reject
             // the pipeline if it actively requires XFB but the host device
             // does not support it
-            LOG_WARNING(Render_Vulkan, "Skipping cached graphics pipeline: EDS feature mismatch");
+            ++state.feature_mismatch;
             return;
         }
         workers.QueueWork([this, key, envs_ = std::move(envs), &state, &callback]() mutable {
@@ -691,6 +692,12 @@ void PipelineCache::LoadDiskResources(u64 title_id, std::stop_token stop_loading
     if (state.invalid != 0) {
         LOG_WARNING(Render_Vulkan, "Skipped {} cached pipelines with invalid shader entry points",
                     state.invalid);
+    }
+    if (state.feature_mismatch != 0) {
+        LOG_WARNING(Render_Vulkan,
+                    "Skipped {} cached graphics pipelines with incompatible dynamic-state "
+                    "features",
+                    state.feature_mismatch);
     }
 
     LOG_INFO(Render_Vulkan, "Total Pipeline Count: {}", state.total);

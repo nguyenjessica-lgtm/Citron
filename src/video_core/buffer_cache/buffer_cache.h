@@ -1825,7 +1825,14 @@ Binding BufferCache<P>::StorageBufferBinding(GPUVAddr ssbo_addr, u32 cbuf_index,
 
     const std::optional<DAddr> aligned_device_addr = gpu_memory->GpuToCpuAddress(aligned_gpu_addr);
     if (!aligned_device_addr || size == 0) {
-        LOG_WARNING(HW_GPU, "Failed to find storage buffer for cbuf index {}", cbuf_index);
+        static std::atomic<u64> missing_storage_buffer_count{0};
+        const u64 count =
+            missing_storage_buffer_count.fetch_add(1, std::memory_order_relaxed) + 1;
+        if (count <= 8 || (count % 4096) == 0) {
+            LOG_WARNING(HW_GPU,
+                        "Failed to find storage buffer for cbuf index {} (sample_count={})",
+                        cbuf_index, count);
+        }
         return NULL_BINDING;
     }
     const std::optional<DAddr> device_addr = gpu_memory->GpuToCpuAddress(gpu_addr);
