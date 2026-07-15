@@ -7,6 +7,7 @@
 #include <array>
 #include <bit>
 #include <memory>
+#include <mutex>
 #include <ranges>
 #include <string_view>
 
@@ -54,6 +55,10 @@ Opcode Decode(u64 insn) {
         return *opcode;
     }
     if (insn == 0) [[unlikely]] {
+        static std::once_flag zero_instruction_log_once;
+        std::call_once(zero_instruction_log_once, [] {
+            LOG_DEBUG(Debug, "Invalid zero instruction; decoding as NOP");
+        });
         return Opcode::NOP;
     }
     ASSERT_MSG(false, "Invalid insn 0x{:016x}", insn);
