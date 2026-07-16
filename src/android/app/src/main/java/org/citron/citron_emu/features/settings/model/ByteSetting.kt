@@ -9,12 +9,13 @@ enum class ByteSetting(override val key: String) : AbstractByteSetting {
     AUDIO_VOLUME("volume");
 
     override fun getByte(needsGlobal: Boolean): Byte {
-        val boost = NativeConfig.getByte(VOLUME_BOOST_KEY, needsGlobal)
-        return if ((boost.toInt() and 0xFF) > DEFAULT_VOLUME) {
-            boost
-        } else {
-            NativeConfig.getByte(key, needsGlobal)
+        if (this == AUDIO_VOLUME) {
+            val boost = NativeConfig.getByte(VOLUME_BOOST_KEY, needsGlobal)
+            if ((boost.toInt() and 0xFF) > DEFAULT_VOLUME) {
+                return boost
+            }
         }
+        return NativeConfig.getByte(key, needsGlobal)
     }
 
     override fun setByte(value: Byte) {
@@ -22,12 +23,16 @@ enum class ByteSetting(override val key: String) : AbstractByteSetting {
             global = false
         }
 
-        if ((value.toInt() and 0xFF) > DEFAULT_VOLUME) {
-            NativeConfig.setByte(key, DEFAULT_VOLUME.toByte())
-            NativeConfig.setByte(VOLUME_BOOST_KEY, value)
+        if (this == AUDIO_VOLUME) {
+            if ((value.toInt() and 0xFF) > DEFAULT_VOLUME) {
+                NativeConfig.setByte(key, DEFAULT_VOLUME.toByte())
+                NativeConfig.setByte(VOLUME_BOOST_KEY, value)
+            } else {
+                NativeConfig.setByte(key, value)
+                NativeConfig.setByte(VOLUME_BOOST_KEY, DEFAULT_VOLUME.toByte())
+            }
         } else {
             NativeConfig.setByte(key, value)
-            NativeConfig.setByte(VOLUME_BOOST_KEY, DEFAULT_VOLUME.toByte())
         }
     }
 
@@ -35,7 +40,9 @@ enum class ByteSetting(override val key: String) : AbstractByteSetting {
         get() = NativeConfig.usingGlobal(key)
         set(value) {
             NativeConfig.setGlobal(key, value)
-            NativeConfig.setGlobal(VOLUME_BOOST_KEY, value)
+            if (this == AUDIO_VOLUME) {
+                NativeConfig.setGlobal(VOLUME_BOOST_KEY, value)
+            }
         }
 
     override val defaultValue: Byte by lazy { NativeConfig.getDefaultToString(key).toByte() }
@@ -45,7 +52,9 @@ enum class ByteSetting(override val key: String) : AbstractByteSetting {
 
     override fun reset() {
         NativeConfig.setByte(key, defaultValue)
-        NativeConfig.setByte(VOLUME_BOOST_KEY, DEFAULT_VOLUME.toByte())
+        if (this == AUDIO_VOLUME) {
+            NativeConfig.setByte(VOLUME_BOOST_KEY, DEFAULT_VOLUME.toByte())
+        }
     }
 
     companion object {
