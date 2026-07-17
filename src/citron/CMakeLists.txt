@@ -196,7 +196,6 @@ add_executable(citron
     debugger/address_list.h
     debugger/disassembler_view.cpp
     debugger/disassembler_view.h
-    discord.h
     game_details_panel.cpp
     game_details_panel.h
     game_grid_delegate.cpp
@@ -549,15 +548,6 @@ target_compile_definitions(citron PRIVATE
 
 if (CITRON_ENABLE_COMPATIBILITY_REPORTING)
     target_compile_definitions(citron PRIVATE -DCITRON_ENABLE_COMPATIBILITY_REPORTING)
-endif()
-
-if (USE_DISCORD_PRESENCE)
-    target_sources(citron PUBLIC
-        discord_impl.cpp
-        discord_impl.h
-    )
-    target_link_libraries(citron PRIVATE DiscordRPC::discord-rpc httplib::httplib Qt6::Network)
-    target_compile_definitions(citron PRIVATE -DUSE_DISCORD_PRESENCE)
 endif()
 
 if (ENABLE_WEB_SERVICE)
