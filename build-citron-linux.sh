@@ -710,7 +710,6 @@ build_common_cmake_args() {
         "-DCITRON_USE_QT_MULTIMEDIA=ON"
         "-DCITRON_USE_QT_WEB_ENGINE=OFF"
         "-DENABLE_QT_TRANSLATION=ON"
-        "-DUSE_DISCORD_PRESENCE=ON"
         "-DENABLE_WEB_SERVICE=ON"
         "-DENABLE_OPENSSL=ON"
         "-DBUNDLE_SPEEX=ON"

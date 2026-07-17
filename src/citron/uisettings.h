@@ -150,9 +150,6 @@ namespace UISettings {
                                     Setting<bool> always_ask_manual_extraction{linkage, false, "always_ask_manual_extraction", Category::Ui};
                                     Setting<bool> disable_backup_archives{linkage, false, "disable_backup_archives", Category::Ui};
 
-                                    // Discord RPC
-                                    Setting<bool> enable_discord_presence{linkage, true, "enable_discord_presence", Category::Ui};
-
                                     // logging
                                     Setting<bool> show_console{linkage, false, "showConsole", Category::Ui};
 

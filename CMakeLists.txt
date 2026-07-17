@@ -83,8 +83,6 @@ option(ENABLE_UNITY_BUILD "Enables the unity build" OFF)
 
 option(ENABLE_CUBEB "Enables the cubeb audio backend" ON)
 
-option(USE_DISCORD_PRESENCE "Enables Discord Rich Presence" OFF)
-
 option(CITRON_TESTS "Compile tests" "${BUILD_TESTING}")
 
 option(CITRON_USE_PRECOMPILED_HEADERS "Use precompiled headers" ON)
@@ -471,10 +469,6 @@ if (ENABLE_CUBEB)
     endif()
 endif()
 
-if (USE_DISCORD_PRESENCE)
-    find_package(DiscordRPC MODULE)
-endif()
-
 if (ENABLE_WEB_SERVICE)
     if (NOT TARGET cpp-jwt::cpp-jwt)
         find_package(cpp-jwt 1.4 CONFIG)
@@ -522,33 +516,8 @@ function(create_target_directory_groups target_name)
 endfunction()
 
 add_subdirectory(externals)
-# When CPM is ON, discord-rpc and dynarmic/mcl patches are applied post-populate
+# When CPM is ON, dynarmic/mcl patches are applied post-populate
 # inside CMakeModules/dependencies.cmake. Skip the submodule-path patches.
-if(USE_DISCORD_PRESENCE AND NOT CITRON_USE_CPM)
-    message(STATUS "Applying custom patch to submodule's rapidjson for Discord presence...")
-
-    # Define the path to the patch file and the target directory
-    set(PATCH_FILE "${CMAKE_CURRENT_SOURCE_DIR}/patches/rapidjson-compiler-fix.patch")
-    set(PATCH_TARGET_DIR "${CMAKE_CURRENT_SOURCE_DIR}/externals/discord-rpc/thirdparty/rapidjson-1.1.0")
-
-    # Check if the target directory exists before trying to patch
-    if(EXISTS "${PATCH_TARGET_DIR}")
-        execute_process(
-            COMMAND git apply --ignore-whitespace "${PATCH_FILE}"
-            WORKING_DIRECTORY "${PATCH_TARGET_DIR}"
-            RESULT_VARIABLE PATCH_RESULT
-            OUTPUT_QUIET
-            ERROR_QUIET
-        )
-
-        if(NOT PATCH_RESULT EQUAL 0)
-            message(WARNING "Failed to apply rapidjson compiler fix patch! This might be okay if it's already applied.")
-        endif()
-    else()
-        message(WARNING "Could not find rapidjson directory to patch. It may not have been downloaded yet.")
-    endif()
-endif()
-
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND NOT CITRON_USE_CPM)
     message(STATUS "Applying custom patch to submodule's mcl for Clang compatibility...")
 
@@ -594,33 +563,6 @@ if(EXISTS "${STB_PATCH_WORKING_DIR}/externals/stb/stb_image.h")
     endif()
 else()
     message(WARNING "Could not find stb_image.h to patch. It may not have been downloaded yet.")
-endif()
-
-# Apply a patch to discord-rpc's CMakeLists.txt to suppress -Wclass-memaccess
-# (skipped when CPM is ON — patches applied in CMakeModules/dependencies.cmake)
-if(NOT CITRON_USE_CPM)
-    message(STATUS "Applying custom patch to submodule's discord-rpc CMakeLists.txt...")
-
-    # Define the path to the patch file and the target directory using unique names
-    set(DISCORD_RPC_PATCH_FILE "${CMAKE_CURRENT_SOURCE_DIR}/patches/discord-rpc-wclass-memaccess-fix.patch")
-    set(DISCORD_RPC_PATCH_TARGET_DIR "${CMAKE_CURRENT_SOURCE_DIR}/externals/discord-rpc")
-
-    # Check if the target directory exists before trying to patch
-    if(EXISTS "${DISCORD_RPC_PATCH_TARGET_DIR}")
-        execute_process(
-            COMMAND git apply -p0 --ignore-whitespace "${DISCORD_RPC_PATCH_FILE}"
-            WORKING_DIRECTORY "${DISCORD_RPC_PATCH_TARGET_DIR}"
-            RESULT_VARIABLE PATCH_RESULT
-            OUTPUT_QUIET
-            ERROR_QUIET
-        )
-
-        if(NOT PATCH_RESULT EQUAL 0)
-            message(WARNING "Failed to apply discord-rpc CMakeLists.txt patch! This might be okay if it's already applied.")
-        endif()
-    else()
-        message(WARNING "Could not find discord-rpc directory to patch. It may not have been downloaded yet.")
-    endif()
 endif()
 
 if (ENABLE_QT AND NOT CITRON_USE_CPM)

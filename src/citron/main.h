@@ -77,9 +77,6 @@ struct InlineTextParameters;
 struct KeyboardInitializeParameters;
 struct ProfileSelectParameters;
 } // namespace Core::Frontend
-namespace DiscordRPC {
-class DiscordInterface;
-}
 namespace PlayTime {
 class PlayTimeManager;
 }
@@ -251,7 +248,6 @@ private:
                   StartGameType with_config = StartGameType::Normal);
     void BootGameFromList(const QString& filename, StartGameType with_config);
     void ShutdownGame();
-    void SetDiscordEnabled(bool state);
     void LoadAmiibo(const QString& filename);
     bool SelectAndSetCurrentUser(const Core::Frontend::ProfileSelectParameters& parameters);
     void StoreRecentFile(const QString& filename);
@@ -428,7 +424,6 @@ private:
     std::unique_ptr<Core::System> system;
     std::shared_ptr<InputCommon::InputSubsystem> input_subsystem;
     std::unique_ptr<Ui::MainWindow> ui;
-    std::unique_ptr<DiscordRPC::DiscordInterface> discord_rpc;
     std::unique_ptr<PlayTime::PlayTimeManager> play_time_manager;
     MultiplayerState* multiplayer_state = nullptr;
     GRenderWindow *render_window;
