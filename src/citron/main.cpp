@@ -147,7 +147,6 @@ static FileSys::VirtualFile VfsDirectoryCreateFileWrapper(const FileSys::Virtual
 #include "citron/debugger/controller.h"
 #include "citron/debugger/memory_tools.h"
 #include "citron/debugger/wait_tree.h"
-#include "citron/discord.h"
 #include "citron/game_list.h"
 #include "citron/game_list_p.h"
 #include "citron/hotkeys.h"
@@ -203,10 +202,6 @@ static FileSys::VirtualFile VfsDirectoryCreateFileWrapper(const FileSys::Virtual
 #endif
 
 using namespace Common::Literals;
-
-#ifdef USE_DISCORD_PRESENCE
-#include "citron/discord_impl.h"
-#endif
 
 #ifdef QT_STATICPLUGIN
 Q_IMPORT_PLUGIN(QWindowsIntegrationPlugin);
@@ -366,9 +361,6 @@ GMainWindow::GMainWindow(std::unique_ptr<QtConfig> config_, bool has_broken_vulk
     default_theme_paths = QIcon::themeSearchPaths();
 
     play_time_manager = std::make_unique<PlayTime::PlayTimeManager>(system->GetProfileManager());
-
-    SetDiscordEnabled(UISettings::values.enable_discord_presence.GetValue());
-    discord_rpc->Update();
 
     system->GetRoomNetwork().Init();
 
@@ -2439,7 +2431,6 @@ bool GMainWindow::OnShutdownBegin() {
     }
 
     system->SetShuttingDown(true);
-    discord_rpc->Pause();
 
     RequestGameExit();
     emu_thread->disconnect();
@@ -2516,8 +2507,6 @@ void GMainWindow::OnEmulationStopped() {
     game_list->PopulateAsync(UISettings::values.game_dirs, true);
     game_list->setEnabled(true);
     game_list->setFocus();
-
-    discord_rpc->Update();
 
 #ifdef __unix__
     Common::Linux::StopGamemode();
@@ -4055,8 +4044,6 @@ void GMainWindow::OnStartGame() {
     play_time_manager->SetProgramId(system->GetApplicationProcessProgramID());
     play_time_manager->Start();
 
-    discord_rpc->Update();
-
 #ifdef __unix__
     Common::Linux::StartGamemode();
 #endif
@@ -4395,7 +4382,6 @@ void GMainWindow::ResetWindowSize1080() {
 void GMainWindow::OnConfigure() {
     m_is_configuring = true;
     const auto old_theme = UISettings::values.theme;
-    const bool old_discord_presence = UISettings::values.enable_discord_presence.GetValue();
     const auto old_language_index = Settings::values.language_index.GetValue();
 #ifdef __unix__
     const bool old_gamemode = Settings::values.enable_gamemode.GetValue();
@@ -4459,9 +4445,6 @@ void GMainWindow::OnConfigure() {
     // This is for other configuration sources
     if (UISettings::values.theme != old_theme && !m_is_configuring) {
         UpdateUITheme();
-    }
-    if (UISettings::values.enable_discord_presence.GetValue() != old_discord_presence) {
-        SetDiscordEnabled(UISettings::values.enable_discord_presence.GetValue());
     }
 #ifdef __unix__
     if (Settings::values.enable_gamemode.GetValue() != old_gamemode) {
@@ -6565,19 +6548,6 @@ void GMainWindow::OnLanguageChanged(const QString& locale) {
     ui->retranslateUi(this);
     multiplayer_state->retranslateUi();
     UpdateWindowTitle();
-}
-
-void GMainWindow::SetDiscordEnabled([[maybe_unused]] bool state) {
-#ifdef USE_DISCORD_PRESENCE
-    if (state) {
-        discord_rpc = std::make_unique<DiscordRPC::DiscordImpl>(*system, *play_time_manager);
-    } else {
-        discord_rpc = std::make_unique<DiscordRPC::NullImpl>();
-    }
-#else
-    discord_rpc = std::make_unique<DiscordRPC::NullImpl>();
-#endif
-    discord_rpc->Update();
 }
 
 #ifdef __unix__
